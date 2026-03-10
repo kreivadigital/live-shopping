@@ -5,6 +5,8 @@ namespace LiveProConnector;
 use LiveProConnector\Admin\SettingsPage;
 use LiveProConnector\Frontend\WidgetAssets;
 use LiveProConnector\Rest\OrderPendingRoute;
+use LiveProConnector\Rest\ProductDetailsRoute;
+use LiveProConnector\Support\ProductDataResolver;
 use LiveProConnector\Support\SettingsRepository;
 
 final class Plugin
@@ -12,14 +14,17 @@ final class Plugin
     private SettingsPage $settingsPage;
     private WidgetAssets $widgetAssets;
     private OrderPendingRoute $orderPendingRoute;
+    private ProductDetailsRoute $productDetailsRoute;
 
     public function __construct(string $pluginFile)
     {
         $settings = new SettingsRepository();
+        $productDataResolver = new ProductDataResolver();
 
         $this->settingsPage = new SettingsPage($settings, $pluginFile);
         $this->widgetAssets = new WidgetAssets($settings, $pluginFile);
         $this->orderPendingRoute = new OrderPendingRoute($settings);
+        $this->productDetailsRoute = new ProductDetailsRoute($productDataResolver);
     }
 
     public function boot(): void
@@ -27,5 +32,6 @@ final class Plugin
         $this->settingsPage->boot();
         $this->widgetAssets->boot();
         $this->orderPendingRoute->boot();
+        $this->productDetailsRoute->boot();
     }
 }

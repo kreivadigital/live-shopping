@@ -20,6 +20,8 @@
     mountedVideoId: null,
     lastProductSignature: '',
     activeProductKey: '',
+    fallbackCache: {},
+    fallbackStatus: {},
   }
 
   const root = document.createElement('div')
@@ -73,7 +75,8 @@
   }
 
   function renderExpanded() {
-    const product = getProductViewModel(state.live && state.live.product ? state.live.product : {})
+    const rawProduct = state.live && state.live.product ? state.live.product : {}
+    const product = getProductViewModel(getResolvedProductSource(rawProduct))
     const videoId = state.live.youtube_video_id || ''
     const viewers = getViewerLabel()
     const hasActiveProduct = Boolean(product.key)
@@ -307,7 +310,8 @@
       return false
     }
 
-    const product = getProductViewModel(state.live && state.live.product ? state.live.product : {})
+    const rawProduct = state.live && state.live.product ? state.live.product : {}
+    const product = getProductViewModel(getResolvedProductSource(rawProduct))
     const viewers = getViewerLabel()
     const hasActiveProduct = Boolean(product.key)
     const dockHost = shell.querySelector('.livepro-shell__dock-host')
@@ -352,6 +356,7 @@
 
       const prevVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
       state.live = body
+      ensureProductFallback(body.product)
       const nextVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
 
       if (state.expanded && prevVideoId && nextVideoId && prevVideoId === nextVideoId && state.mountedVideoId === nextVideoId) {
@@ -489,7 +494,145 @@
         showLiveBadge: config.indicators ? config.indicators.showLiveBadge !== false : true,
         showViewers: config.indicators ? config.indicators.showViewers !== false : true,
       },
+      productDataStrategy: String(config.productDataStrategy || 'livepro_with_fallback'),
     }
+  }
+
+  function ensureProductFallback(product) {
+    if (widgetCfg.productDataStrategy !== 'livepro_with_fallback') {
+      return
+    }
+
+    const productId = Number(product && product.product_id ? product.product_id : 0)
+    if (!productId || !cfg.rest || !cfg.rest.productViewUrl) {
+      return
+    }
+
+    if (!needsFallbackData(product)) {
+      return
+    }
+
+    const cacheKey = getProductCacheKey(product)
+    if (!cacheKey || state.fallbackStatus[cacheKey] === 'pending' || state.fallbackStatus[cacheKey] === 'done' || state.fallbackStatus[cacheKey] === 'error') {
+      return
+    }
+
+    state.fallbackStatus[cacheKey] = 'pending'
+
+    const url = new URL(String(cfg.rest.productViewUrl), window.location.origin)
+    url.searchParams.set('product_id', String(productId))
+
+    const variationId = Number(product && product.variation_id ? product.variation_id : 0)
+    if (variationId > 0) {
+      url.searchParams.set('variation_id', String(variationId))
+    }
+
+    fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then(async (response) => {
+        const body = await response.json()
+        if (!response.ok || !body.ok || !body.product) {
+          throw new Error(body && body.error ? body.error : 'No se pudo resolver producto')
+        }
+
+        state.fallbackCache[cacheKey] = body.product
+        state.fallbackStatus[cacheKey] = 'done'
+
+        if (state.live && state.expanded) {
+          updateExpandedShell()
+        }
+      })
+      .catch(() => {
+        state.fallbackStatus[cacheKey] = 'error'
+      })
+  }
+
+  function getResolvedProductSource(product) {
+    const fallback = state.fallbackCache[getProductCacheKey(product)]
+
+    if (!fallback) {
+      return product || {}
+    }
+
+    return mergeProductData(product || {}, fallback)
+  }
+
+  function mergeProductData(primary, fallback) {
+    const merged = Object.assign({}, fallback, primary)
+
+    merged.image = primary.image || fallback.image || ''
+    merged.gallery = dedupeList([
+      ...readImageList(primary.gallery),
+      ...readImageList(primary.images),
+      ...readImageList(primary.photos),
+      ...(primary.image ? [primary.image] : []),
+      ...readImageList(fallback.gallery),
+      ...readImageList(fallback.images),
+      ...readImageList(fallback.photos),
+      ...(fallback.image ? [fallback.image] : []),
+    ])
+
+    merged.colors = dedupeList([
+      ...readTextList(primary.colors),
+      ...readTextList(primary.color_options),
+      ...readTextList(fallback.colors),
+      ...readTextList(fallback.color_options),
+    ])
+
+    merged.sizes = dedupeList([
+      ...readTextList(primary.sizes),
+      ...readTextList(primary.talles),
+      ...readTextList(primary.size_options),
+      ...readTextList(fallback.sizes),
+      ...readTextList(fallback.talles),
+      ...readTextList(fallback.size_options),
+    ])
+
+    return merged
+  }
+
+  function needsFallbackData(product) {
+    if (!product || Number(product.product_id || 0) <= 0) {
+      return false
+    }
+
+    const gallery = dedupeList([
+      product.image,
+      ...readImageList(product.gallery),
+      ...readImageList(product.images),
+      ...readImageList(product.photos),
+    ])
+
+    const colors = dedupeList([
+      ...readTextList(product.colors),
+      ...readTextList(product.color_options),
+      ...readAttributeValues(product.attributes, ['color', 'colour', 'colores']),
+    ])
+
+    const sizes = dedupeList([
+      ...readTextList(product.sizes),
+      ...readTextList(product.talles),
+      ...readTextList(product.size_options),
+      ...readAttributeValues(product.attributes, ['size', 'sizes', 'talle', 'talles', 'tamano', 'tamaño']),
+    ])
+
+    return gallery.length <= 1 || colors.length === 0 || sizes.length === 0
+  }
+
+  function getProductCacheKey(product) {
+    if (!product) {
+      return ''
+    }
+
+    const productId = Number(product.product_id || 0)
+    if (!productId) {
+      return ''
+    }
+
+    const variationId = Number(product.variation_id || 0)
+    return `${productId}:${variationId}`
   }
 
   function buildEmbedUrl(videoId, autoplay, muted) {

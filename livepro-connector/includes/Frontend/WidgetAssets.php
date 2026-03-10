@@ -55,6 +55,9 @@ final class WidgetAssets
             'pollMs' => 5000,
             'previewImageUrl' => esc_url_raw((string) ($settings['preview_image_url'] ?? '')),
             'previewViewers' => (string) ($settings['preview_viewers'] ?? ''),
+            'rest' => [
+                'productViewUrl' => esc_url_raw(rest_url('livepro/v1/product-view')),
+            ],
             'widget' => [
                 'widthDesktop' => (int) ($settings['widget_width_desktop'] ?? 392),
                 'widthMobile' => ($settings['widget_width_mobile'] ?? '') === ''
