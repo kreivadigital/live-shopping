@@ -235,45 +235,47 @@
           ${renderSheetCloseIcon()}
         </button>
 
-        <div class="livepro-product-sheet__header">
-          <p class="livepro-product-sheet__step">Paso ${galleryCount ? activeIndex + 1 : 1} de ${galleryCount || 1}</p>
-          <div class="livepro-product-sheet__hero">
-            <div class="livepro-product-sheet__photo">
-              <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
-            </div>
-            <div class="livepro-product-sheet__summary">
-              <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
-              <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
-              <p class="livepro-product-sheet__stock">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="livepro-product-sheet__gallery">
-          ${galleryCount > 1 ? `
-            <div class="livepro-gallery">
-              <button class="livepro-gallery-nav livepro-gallery-nav--prev" type="button" aria-label="Foto anterior">${renderArrowIcon('left')}</button>
-              <div class="livepro-gallery__viewport">
+        <div class="livepro-product-sheet__content">
+          <div class="livepro-product-sheet__header">
+            <p class="livepro-product-sheet__step">Paso ${galleryCount ? activeIndex + 1 : 1} de ${galleryCount || 1}</p>
+            <div class="livepro-product-sheet__hero">
+              <div class="livepro-product-sheet__photo">
                 <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
               </div>
-              <button class="livepro-gallery-nav livepro-gallery-nav--next" type="button" aria-label="Foto siguiente">${renderArrowIcon('right')}</button>
+              <div class="livepro-product-sheet__summary">
+                <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
+                <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
+                <p class="livepro-product-sheet__stock">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
+              </div>
             </div>
-            <div class="livepro-gallery-dots">
-              ${product.gallery.map((_, index) => `
-                <button
-                  class="livepro-gallery-dot ${index === activeIndex ? 'is-active' : ''}"
-                  type="button"
-                  data-index="${index}"
-                  aria-label="Ir a foto ${index + 1}"
-                ></button>
-              `).join('')}
-            </div>
-          ` : ''}
-        </div>
+          </div>
 
-        <div class="livepro-product-sheet__blocks">
-          ${renderInfoGroup('Color', product.colors, 'No informado')}
-          ${renderInfoGroup('Tamaño', product.sizes, 'No informado')}
+          <div class="livepro-product-sheet__gallery">
+            ${galleryCount > 1 ? `
+              <div class="livepro-gallery">
+                <button class="livepro-gallery-nav livepro-gallery-nav--prev" type="button" aria-label="Foto anterior">${renderArrowIcon('left')}</button>
+                <div class="livepro-gallery__viewport">
+                  <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
+                </div>
+                <button class="livepro-gallery-nav livepro-gallery-nav--next" type="button" aria-label="Foto siguiente">${renderArrowIcon('right')}</button>
+              </div>
+              <div class="livepro-gallery-dots">
+                ${product.gallery.map((_, index) => `
+                  <button
+                    class="livepro-gallery-dot ${index === activeIndex ? 'is-active' : ''}"
+                    type="button"
+                    data-index="${index}"
+                    aria-label="Ir a foto ${index + 1}"
+                  ></button>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="livepro-product-sheet__blocks">
+            ${renderInfoGroup('Color', product.colors, 'No informado')}
+            ${renderInfoGroup('Tamaño', product.sizes, 'No informado')}
+          </div>
         </div>
 
         <div class="livepro-product-sheet__footer">
