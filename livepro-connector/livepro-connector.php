@@ -2,7 +2,7 @@
 /**
  * Plugin Name: LivePro Connector
  * Description: Conecta WooCommerce con el backoffice de LivePro e inyecta el widget de live shopping.
- * Version: 0.4.0
+ * Version: 0.5.0
  * Author: LivePro
  */
 
