@@ -204,7 +204,7 @@
           <div class="livepro-product-dock__body">
             <div class="livepro-product-dock__meta">
               <span class="livepro-product-dock__tag">DESTACADO</span>
-              <span class="livepro-product-dock__stock">
+              <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
                 ${renderStockIcon()}
                 ${escapeHtml(product.stockLabel)}
               </span>
@@ -237,28 +237,22 @@
 
         <div class="livepro-product-sheet__content">
           <div class="livepro-product-sheet__header">
-            <p class="livepro-product-sheet__step">Paso ${galleryCount ? activeIndex + 1 : 1} de ${galleryCount || 1}</p>
-            <div class="livepro-product-sheet__hero">
-              <div class="livepro-product-sheet__photo">
-                <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
-              </div>
-              <div class="livepro-product-sheet__summary">
-                <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
-                <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
-                <p class="livepro-product-sheet__stock">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
-              </div>
-            </div>
+            <p class="livepro-product-sheet__step is-hidden" aria-hidden="true">Paso ${galleryCount ? activeIndex + 1 : 1} de ${galleryCount || 1}</p>
           </div>
 
           <div class="livepro-product-sheet__gallery">
-            ${galleryCount > 1 ? `
-              <div class="livepro-gallery">
+            <div class="livepro-gallery ${galleryCount <= 1 ? 'livepro-gallery--single' : ''}">
+              ${galleryCount > 1 ? `
                 <button class="livepro-gallery-nav livepro-gallery-nav--prev" type="button" aria-label="Foto anterior">${renderArrowIcon('left')}</button>
-                <div class="livepro-gallery__viewport">
-                  <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
-                </div>
-                <button class="livepro-gallery-nav livepro-gallery-nav--next" type="button" aria-label="Foto siguiente">${renderArrowIcon('right')}</button>
+              ` : ''}
+              <div class="livepro-gallery__viewport">
+                <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
               </div>
+              ${galleryCount > 1 ? `
+                <button class="livepro-gallery-nav livepro-gallery-nav--next" type="button" aria-label="Foto siguiente">${renderArrowIcon('right')}</button>
+              ` : ''}
+            </div>
+            ${galleryCount > 1 ? `
               <div class="livepro-gallery-dots">
                 ${product.gallery.map((_, index) => `
                   <button
@@ -272,13 +266,19 @@
             ` : ''}
           </div>
 
+          <div class="livepro-product-sheet__summary">
+            <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
+            <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
+            <p class="livepro-product-sheet__stock is-hidden" aria-hidden="true">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
+          </div>
+
           <div class="livepro-product-sheet__blocks">
             ${renderInfoGroup('Color', product.colors, 'No informado')}
-            ${renderInfoGroup('Tamaño', product.sizes, 'No informado')}
+            ${renderInfoGroup('Talle', product.sizes, 'No informado')}
           </div>
         </div>
 
-        <div class="livepro-product-sheet__footer">
+        <div class="livepro-product-sheet__footer is-hidden" aria-hidden="true">
           <button class="livepro-product-sheet__continue" type="button">
             CONTINUAR
             ${renderChevronIcon()}
@@ -318,6 +318,11 @@
     const hasActiveProduct = Boolean(product.key)
     const dockHost = shell.querySelector('.livepro-shell__dock-host')
     const statusHost = shell.querySelector('.livepro-shell__status')
+    const nextSignature = productSignature(product.raw)
+    const productChanged = nextSignature !== state.lastProductSignature
+    const existingSheet = shell.querySelector('.livepro-product-sheet')
+    const existingSheetContent = existingSheet ? existingSheet.querySelector('.livepro-product-sheet__content') : null
+    const previousScrollTop = existingSheetContent ? existingSheetContent.scrollTop : 0
 
     syncProductState(product)
 
@@ -325,20 +330,25 @@
       statusHost.innerHTML = renderStatusPills(viewers, 'panel')
     }
 
-    if (dockHost) {
+    if (dockHost && productChanged) {
       dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
     }
 
-    const existingSheet = shell.querySelector('.livepro-product-sheet')
-    if (existingSheet) {
-      existingSheet.remove()
+    if (productChanged) {
+      if (existingSheet) {
+        existingSheet.remove()
+      }
+
+      if (hasActiveProduct && state.productSheetOpen) {
+        shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
+        const nextSheetContent = shell.querySelector('.livepro-product-sheet__content')
+        if (nextSheetContent) {
+          nextSheetContent.scrollTop = previousScrollTop
+        }
+      }
     }
 
-    if (hasActiveProduct && state.productSheetOpen) {
-      shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
-    }
-
-    state.lastProductSignature = productSignature(product.raw)
+    state.lastProductSignature = nextSignature
     bindExpandedInteractions(product)
 
     return true
