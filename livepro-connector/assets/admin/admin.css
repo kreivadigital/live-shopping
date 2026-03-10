@@ -1,0 +1,323 @@
+.livepro-admin-page {
+  max-width: 1380px;
+  margin-top: 24px;
+  color: #132238;
+}
+
+.livepro-admin-page__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(69, 94, 255, 0.18), transparent 28%),
+    linear-gradient(135deg, #f8fbff 0%, #eef3ff 48%, #f5f7fb 100%);
+  border: 1px solid rgba(122, 145, 196, 0.22);
+  box-shadow: 0 18px 36px rgba(17, 35, 78, 0.08);
+}
+
+.livepro-admin-page__hero h1 {
+  margin: 6px 0 10px;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.livepro-admin-page__hero p {
+  margin: 0;
+  max-width: 720px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #5b6b86;
+}
+
+.livepro-admin-page__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(28, 45, 101, 0.08);
+  color: #4054a5;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.livepro-admin-page__hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #263958;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.livepro-admin-page__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+}
+
+.livepro-admin-page__status-dot.is-online {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.livepro-admin-page__status-dot.is-offline {
+  background: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.12);
+}
+
+.livepro-admin-page__flash {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f0f7ff;
+  border: 1px solid #cddff9;
+  color: #184a88;
+  font-weight: 500;
+}
+
+.livepro-admin-page__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.livepro-admin-page__section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.livepro-card {
+  padding: 22px;
+  border-radius: 22px;
+  background: #fff;
+  border: 1px solid #e3e9f4;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+}
+
+.livepro-card--compact {
+  padding: 20px;
+}
+
+.livepro-card__header h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.livepro-card__header p {
+  margin: 0 0 18px;
+  color: #677891;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.livepro-card__fields {
+  display: grid;
+  gap: 18px;
+}
+
+.livepro-field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 700;
+  color: #253757;
+}
+
+.livepro-field__description {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #73839b;
+}
+
+.livepro-field input[type="text"],
+.livepro-field input[type="password"],
+.livepro-field input[type="url"],
+.livepro-field input[type="number"],
+.livepro-field select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid #d7dfec;
+  padding: 0 14px;
+  background: #fbfcfe;
+  color: #192b47;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.livepro-field input:focus,
+.livepro-field select:focus {
+  border-color: #5c74ff;
+  box-shadow: 0 0 0 3px rgba(92, 116, 255, 0.14);
+  outline: 0;
+}
+
+.livepro-media-field {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.livepro-media-field .button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+.livepro-media-preview {
+  margin-top: 12px;
+}
+
+.livepro-media-preview img {
+  display: block;
+  max-width: 180px;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid #d9e1ef;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.livepro-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.livepro-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.livepro-toggle__track {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: #d6deee;
+  transition: background 0.2s ease;
+}
+
+.livepro-toggle__knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.16);
+  transition: transform 0.2s ease;
+}
+
+.livepro-toggle input[type="checkbox"]:checked + .livepro-toggle__track {
+  background: #5c74ff;
+}
+
+.livepro-toggle input[type="checkbox"]:checked + .livepro-toggle__track .livepro-toggle__knob {
+  transform: translateX(20px);
+}
+
+.livepro-toggle__text {
+  font-weight: 600;
+  color: #31456e;
+}
+
+.livepro-admin-page__actions {
+  margin-top: 20px;
+}
+
+.livepro-admin-page__save.button.button-primary {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: #1f3cff;
+  border-color: #1f3cff;
+  box-shadow: 0 12px 24px rgba(31, 60, 255, 0.2);
+}
+
+.livepro-status-list {
+  display: grid;
+  gap: 12px;
+}
+
+.livepro-status-list__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8faff;
+  border: 1px solid #e6ecf7;
+}
+
+.livepro-status-list__label {
+  color: #64758f;
+  font-weight: 600;
+}
+
+.livepro-status-list__value {
+  color: #15294a;
+  font-weight: 700;
+  text-align: right;
+}
+
+.livepro-inline-form .button {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 12px;
+}
+
+.livepro-checklist {
+  margin: 0;
+  padding-left: 18px;
+  color: #5f6f88;
+  line-height: 1.7;
+}
+
+.livepro-checklist li + li {
+  margin-top: 6px;
+}
+
+@media (max-width: 1200px) {
+  .livepro-admin-page__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .livepro-admin-page__sidebar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+}
+
+@media (max-width: 960px) {
+  .livepro-admin-page__hero {
+    flex-direction: column;
+  }
+
+  .livepro-admin-page__section-grid,
+  .livepro-admin-page__sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .livepro-media-field {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

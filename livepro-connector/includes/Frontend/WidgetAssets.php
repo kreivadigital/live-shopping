@@ -55,6 +55,33 @@ final class WidgetAssets
             'pollMs' => 5000,
             'previewImageUrl' => esc_url_raw((string) ($settings['preview_image_url'] ?? '')),
             'previewViewers' => (string) ($settings['preview_viewers'] ?? ''),
+            'widget' => [
+                'widthDesktop' => (int) ($settings['widget_width_desktop'] ?? 392),
+                'widthMobile' => ($settings['widget_width_mobile'] ?? '') === ''
+                    ? null
+                    : (int) $settings['widget_width_mobile'],
+                'orientation' => (string) ($settings['widget_orientation'] ?? 'vertical'),
+                'position' => [
+                    'vertical' => (string) ($settings['widget_position_vertical'] ?? 'bottom'),
+                    'horizontal' => (string) ($settings['widget_position_horizontal'] ?? 'left'),
+                ],
+                'offset' => [
+                    'x' => (int) ($settings['widget_offset_x'] ?? 16),
+                    'y' => (int) ($settings['widget_offset_y'] ?? 16),
+                ],
+                'autoplay' => !empty($settings['widget_autoplay']),
+                'startMuted' => !empty($settings['widget_start_muted']),
+                'labels' => [
+                    'previewCta' => (string) ($settings['widget_preview_cta_label'] ?? 'VER AHORA'),
+                    'productCta' => (string) ($settings['widget_product_cta_label'] ?? 'VER PRODUCTO'),
+                    'liveBadge' => (string) ($settings['widget_live_badge_label'] ?? 'VIVO'),
+                ],
+                'indicators' => [
+                    'showLiveBadge' => !empty($settings['widget_show_live_badge']),
+                    'showViewers' => !empty($settings['widget_show_viewers']),
+                ],
+                'productDataStrategy' => (string) ($settings['widget_product_data_strategy'] ?? 'livepro_with_fallback'),
+            ],
         ]);
     }
 }
