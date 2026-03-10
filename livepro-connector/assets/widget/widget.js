@@ -1,284 +1,208 @@
 (function () {
   if (!window.LiveProWidgetConfig) {
-    return;
+    return
   }
 
-  const cfg = window.LiveProWidgetConfig;
-  const storeId = Number(cfg.storeId || 0);
+  const cfg = window.LiveProWidgetConfig
+  const widgetCfg = normalizeWidgetConfig(cfg.widget || {})
+  const storeId = Number(cfg.storeId || 0)
+
   if (!storeId || !cfg.backofficeUrl) {
-    return;
+    return
   }
 
   const state = {
     expanded: false,
-    showForm: false,
-    isMuted: true,
+    isMuted: widgetCfg.startMuted,
     live: null,
-    widgetSessionId: getOrCreateSessionId(),
     mountedVideoId: null,
     lastProductSignature: '',
-  };
+  }
 
-  const root = document.createElement('div');
-  root.id = 'livepro-widget-root';
-  document.body.appendChild(root);
+  const root = document.createElement('div')
+  root.id = 'livepro-widget-root'
+  document.body.appendChild(root)
+  applyLayoutConfig()
 
   function render() {
+    applyLayoutConfig()
+
     if (!state.live || !state.live.is_live) {
-      root.classList.remove('livepro-expanded');
-      root.innerHTML = '';
-      return;
+      root.className = ''
+      root.innerHTML = ''
+      return
     }
+
+    root.className = state.expanded ? 'livepro-expanded' : 'livepro-collapsed'
 
     if (!state.expanded) {
-      root.classList.remove('livepro-expanded');
-      const youtubePreview = state.live && state.live.youtube_video_id
-        ? `https://i.ytimg.com/vi/${encodeURIComponent(String(state.live.youtube_video_id))}/hqdefault.jpg`
-        : '';
-      const previewImage = cfg.previewImageUrl || youtubePreview;
-      const viewers = String(state.live.viewer_count || cfg.previewViewers || '').trim();
-      root.innerHTML = `
-        <button class="livepro-mini" type="button" aria-label="Abrir live shopping">
-          ${previewImage ? `<img class="livepro-mini-bg" src="${escapeAttribute(previewImage)}" alt="Preview live">` : ''}
-          <span class="livepro-mini-overlay"></span>
-          <span class="livepro-mini-top">
-            <span class="livepro-mini-badge">VIVO</span>
-            ${viewers ? `<span class="livepro-mini-viewers"><span class="livepro-mini-viewers-icon">◌</span> ${escapeHtml(viewers)}</span>` : ''}
-          </span>
-          <span class="livepro-mini-play"><span>▶</span></span>
-          <span class="livepro-mini-cta">VER AHORA</span>
-        </button>
-      `;
-      root.querySelector('.livepro-mini').addEventListener('click', () => {
-        state.expanded = true;
-        render();
-      });
-      return;
+      renderCollapsed()
+      return
     }
 
-    root.classList.add('livepro-expanded');
+    renderExpanded()
+  }
 
-    const product = state.live.product || {};
-    const videoId = state.live.youtube_video_id || '';
-    const viewers = String(state.live.viewer_count || cfg.previewViewers || '').trim();
-    const hasActiveProduct = Number(product.product_id || 0) > 0;
-    state.lastProductSignature = productSignature(product);
-    state.mountedVideoId = videoId;
+  function renderCollapsed() {
+    const previewImage = resolvePreviewImage()
+    const viewers = getViewerLabel()
+    const pills = renderStatusPills(viewers, 'mini')
 
     root.innerHTML = `
-      <div class="livepro-panel">
-        <div class="livepro-head">
-          <div class="livepro-head-left">
-            <span class="livepro-badge"><span class="livepro-badge-dot"></span>VIVO</span>
-            ${viewers ? `<span class="livepro-head-viewers"><span class="livepro-head-viewers-icon">◌</span>${escapeHtml(viewers)}</span>` : ''}
-          </div>
-          <div class="livepro-head-right">
-            <button class="livepro-icon-btn livepro-mute" type="button" aria-label="Silenciar / activar audio">${state.isMuted ? '🔇' : '🔊'}</button>
-            <button class="livepro-icon-btn livepro-close" type="button" aria-label="Cerrar">✕</button>
-          </div>
-        </div>
-        <div class="livepro-video">
+      <button class="livepro-mini" type="button" aria-label="Abrir live shopping">
+        ${previewImage ? `<img class="livepro-mini__bg" src="${escapeAttribute(previewImage)}" alt="Preview live">` : ''}
+        <span class="livepro-mini__overlay"></span>
+        ${pills ? `<span class="livepro-mini__top">${pills}</span>` : ''}
+        <span class="livepro-mini__center">
+          <span class="livepro-mini__play">${renderPlayIcon()}</span>
+          <span class="livepro-mini__cta">${escapeHtml(widgetCfg.labels.previewCta)}</span>
+        </span>
+      </button>
+    `
+
+    root.querySelector('.livepro-mini').addEventListener('click', () => {
+      state.expanded = true
+      render()
+    })
+  }
+
+  function renderExpanded() {
+    const product = state.live && state.live.product ? state.live.product : {}
+    const videoId = state.live.youtube_video_id || ''
+    const viewers = getViewerLabel()
+    const hasActiveProduct = Number(product.product_id || 0) > 0
+
+    state.mountedVideoId = videoId
+    state.lastProductSignature = productSignature(product)
+
+    root.innerHTML = `
+      <section class="livepro-shell" aria-label="Live shopping">
+        <div class="livepro-shell__media">
           <iframe
-            src="https://www.youtube.com/embed/${escapeHtml(videoId)}?autoplay=1&mute=${state.isMuted ? '1' : '0'}"
+            class="livepro-shell__iframe"
+            src="${escapeAttribute(buildEmbedUrl(videoId, widgetCfg.autoplay, state.isMuted))}"
             title="Live Shopping"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
           ></iframe>
+          <span class="livepro-shell__scrim"></span>
         </div>
-        ${hasActiveProduct ? `
-          <div class="livepro-product">
-            <div class="livepro-product-card">
-              <img src="${escapeAttribute(product.image || '')}" alt="Producto" onerror="this.style.display='none'">
-              <div class="livepro-product-content">
-                <div class="livepro-product-top">
-                  <span class="livepro-product-tag">DESTACADO</span>
-                  <span class="livepro-product-stock"><span class="livepro-product-stock-icon">◌</span>${escapeHtml(getStockLabel(product))}</span>
-                </div>
-                <p class="livepro-product-title">${escapeHtml(product.name || 'Producto destacado')}</p>
-                <p class="livepro-product-price">${escapeHtml(product.price || '')}</p>
-                <button class="livepro-buy" type="button">
-                  <span class="livepro-buy-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" focusable="false">
-                      <path d="M6 7h13l-1.2 7.2a2 2 0 0 1-2 1.8H10a2 2 0 0 1-2-1.6L6 4H3"></path>
-                      <circle cx="10" cy="20" r="1.6"></circle>
-                      <circle cx="17" cy="20" r="1.6"></circle>
-                    </svg>
-                  </span>
-                  COMPRAR AHORA
-                </button>
-              </div>
-            </div>
-            <form class="livepro-form ${state.showForm ? 'show' : ''}">
-              <input name="customer_name" placeholder="Nombre y apellido *" required>
-              <input name="phone" placeholder="Teléfono *" required>
-              <input name="email" placeholder="Email">
-              <input name="city" placeholder="Departamento / Ciudad">
-              <textarea name="notes" placeholder="Notas"></textarea>
-              <button class="livepro-submit" type="submit">Enviar pedido pendiente</button>
-              <p class="livepro-message"></p>
-            </form>
+
+        <div class="livepro-shell__topbar">
+          <div class="livepro-shell__status">
+            ${renderStatusPills(viewers, 'panel')}
           </div>
-        ` : ''}
-      </div>
-    `;
+          <div class="livepro-shell__actions">
+            <button class="livepro-icon-btn livepro-mute" type="button" aria-label="Silenciar o activar audio">
+              ${renderVolumeIcon(state.isMuted)}
+            </button>
+            <button class="livepro-icon-btn livepro-close" type="button" aria-label="Cerrar live shopping">
+              ${renderCloseIcon()}
+            </button>
+          </div>
+        </div>
 
-    root.querySelector('.livepro-close').addEventListener('click', () => {
-      state.expanded = false;
-      state.showForm = false;
-      render();
-    });
+        <div class="livepro-shell__dock-host">
+          ${hasActiveProduct ? renderProductDock(product) : ''}
+        </div>
+      </section>
+    `
 
-    const muteButton = root.querySelector('.livepro-mute');
-    if (muteButton) {
-      muteButton.addEventListener('click', () => {
-        state.isMuted = !state.isMuted;
-        muteButton.textContent = state.isMuted ? '🔇' : '🔊';
-      });
-    }
-
-    const buyButton = root.querySelector('.livepro-buy');
-    if (!buyButton) {
-      return;
-    }
-
-    buyButton.addEventListener('click', () => {
-      state.showForm = !state.showForm;
-      const form = root.querySelector('.livepro-form');
-      if (form) {
-        form.classList.toggle('show', state.showForm);
-      }
-    });
-
-    const form = root.querySelector('.livepro-form');
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const message = form.querySelector('.livepro-message');
-      message.className = 'livepro-message';
-      message.textContent = '';
-
-      const data = new FormData(form);
-      const customerName = String(data.get('customer_name') || '').trim();
-      const phone = String(data.get('phone') || '').trim();
-      const activeProduct = state.live && state.live.product ? state.live.product : {};
-
-      if (!customerName || !phone) {
-        message.classList.add('error');
-        message.textContent = 'Nombre y teléfono son obligatorios.';
-        return;
-      }
-
-      const payload = {
-        store_id: storeId,
-        widget_session_id: state.widgetSessionId,
-        live_session_id: state.live.live_session_id,
-        customer_name: customerName,
-        phone,
-        email: String(data.get('email') || '').trim(),
-        city: String(data.get('city') || '').trim(),
-        notes: String(data.get('notes') || '').trim(),
-        product_id: Number(activeProduct.product_id || 0),
-        variation_id: activeProduct.variation_id ? Number(activeProduct.variation_id) : null,
-        qty: 1,
-      };
-
-      if (!payload.product_id) {
-        message.classList.add('error');
-        message.textContent = 'No hay producto activo para comprar.';
-        return;
-      }
-
-      message.textContent = 'Enviando...';
-
-      try {
-        const response = await fetch(`${cfg.backofficeUrl.replace(/\/$/, '')}/api/v1/intent/create-pending-order`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        const body = await response.json();
-        if (!response.ok || !body.ok) {
-          throw new Error(body.error || 'No se pudo crear el pedido.');
-        }
-
-        message.textContent = body.message || 'Pedido recibido, te contactaremos para finalizar la compra.';
-        form.reset();
-      } catch (error) {
-        message.classList.add('error');
-        message.textContent = error.message || 'Error creando pedido. Intenta nuevamente.';
-      }
-    });
+    bindExpandedInteractions()
   }
 
-  function updateExpandedProductOnly() {
-    if (!state.expanded) return false;
-    const panel = root.querySelector('.livepro-panel');
-    if (!panel) return false;
-
-    const product = state.live && state.live.product ? state.live.product : {};
-    const hasActiveProduct = Number(product.product_id || 0) > 0;
-    const productBlock = panel.querySelector('.livepro-product');
-
-    if (!hasActiveProduct) {
-      if (productBlock) {
-        productBlock.remove();
-      }
-      return true;
+  function bindExpandedInteractions() {
+    const closeButton = root.querySelector('.livepro-close')
+    if (closeButton && closeButton.dataset.bound !== '1') {
+      closeButton.addEventListener('click', () => {
+        state.expanded = false
+        render()
+      })
+      closeButton.dataset.bound = '1'
     }
 
-    if (!productBlock) {
-      return false;
+    const muteButton = root.querySelector('.livepro-mute')
+    if (muteButton && muteButton.dataset.bound !== '1') {
+      muteButton.addEventListener('click', () => {
+        state.isMuted = !state.isMuted
+        render()
+      })
+      muteButton.dataset.bound = '1'
     }
 
-    const title = panel.querySelector('.livepro-product-title');
-    const price = panel.querySelector('.livepro-product-price');
-    const image = panel.querySelector('.livepro-product-card img');
-    const stock = panel.querySelector('.livepro-product-stock');
+    const productButton = root.querySelector('.livepro-product-dock__cta')
+    if (productButton) {
+      productButton.addEventListener('click', () => {
+        const dock = root.querySelector('.livepro-product-dock')
+        if (!dock) {
+          return
+        }
 
-    const nextSignature = productSignature(product);
-    if (state.lastProductSignature !== '' && nextSignature !== state.lastProductSignature) {
-      productBlock.classList.remove('product-fade-in');
-      productBlock.classList.add('product-fade-out');
+        dock.classList.remove('is-primed')
+        window.requestAnimationFrame(() => dock.classList.add('is-primed'))
+        window.setTimeout(() => dock.classList.remove('is-primed'), 700)
+      })
+    }
+  }
 
-      window.setTimeout(() => {
-        if (title) {
-          title.textContent = product.name || 'Producto destacado';
-        }
-        if (price) {
-          price.textContent = product.price || '';
-        }
-        if (stock) {
-          stock.innerHTML = `<span class="livepro-product-stock-icon">◌</span>${escapeHtml(getStockLabel(product))}`;
-        }
-        if (image) {
-          image.setAttribute('src', product.image || '');
-          image.style.display = '';
-        }
-        productBlock.classList.remove('product-fade-out');
-        productBlock.classList.add('product-fade-in');
-      }, 150);
-    } else {
-      if (title) {
-        title.textContent = product.name || 'Producto destacado';
-      }
-      if (price) {
-        price.textContent = product.price || '';
-      }
-      if (stock) {
-        stock.innerHTML = `<span class="livepro-product-stock-icon">◌</span>${escapeHtml(getStockLabel(product))}`;
-      }
-      if (image) {
-        const nextSrc = product.image || '';
-        if (image.getAttribute('src') !== nextSrc) {
-          image.setAttribute('src', nextSrc);
-          image.style.display = '';
-        }
-      }
+  function renderProductDock(product) {
+    return `
+      <div class="livepro-product-dock">
+        <div class="livepro-product-dock__card">
+          <div class="livepro-product-dock__image-wrap">
+            <img class="livepro-product-dock__image" src="${escapeAttribute(product.image || '')}" alt="Producto" onerror="this.style.display='none'">
+          </div>
+
+          <div class="livepro-product-dock__body">
+            <div class="livepro-product-dock__meta">
+              <span class="livepro-product-dock__tag">DESTACADO</span>
+              <span class="livepro-product-dock__stock">
+                ${renderStockIcon()}
+                ${escapeHtml(getStockLabel(product))}
+              </span>
+            </div>
+
+            <p class="livepro-product-dock__title">${escapeHtml(product.name || 'Producto destacado')}</p>
+            <p class="livepro-product-dock__price">${escapeHtml(product.price || '')}</p>
+
+            <button class="livepro-product-dock__cta" type="button">
+              ${renderChevronIcon()}
+              ${escapeHtml(widgetCfg.labels.productCta)}
+            </button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  function updateExpandedShell() {
+    if (!state.expanded) {
+      return false
     }
 
-    state.lastProductSignature = nextSignature;
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell) {
+      return false
+    }
 
-    return true;
+    const product = state.live && state.live.product ? state.live.product : {}
+    const viewers = getViewerLabel()
+    const hasActiveProduct = Number(product.product_id || 0) > 0
+    const dockHost = shell.querySelector('.livepro-shell__dock-host')
+    const statusHost = shell.querySelector('.livepro-shell__status')
+
+    if (statusHost) {
+      statusHost.innerHTML = renderStatusPills(viewers, 'panel')
+    }
+
+    if (dockHost) {
+      dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
+    }
+
+    state.lastProductSignature = productSignature(product)
+    bindExpandedInteractions()
+
+    return true
   }
 
   async function pollLive() {
@@ -286,39 +210,111 @@
       const response = await fetch(`${cfg.backofficeUrl.replace(/\/$/, '')}/api/v1/live/public/${storeId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-      });
+      })
 
-      const body = await response.json();
+      const body = await response.json()
       if (!response.ok) {
-        throw new Error(body.error || 'No se pudo obtener estado live');
+        throw new Error(body.error || 'No se pudo obtener estado live')
       }
 
-      const prevVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null;
-      state.live = body;
-      const nextVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null;
+      const prevVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
+      state.live = body
+      const nextVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
 
-      // Keep playing stream stable: do not remount iframe while expanded unless the live video id changed.
       if (state.expanded && prevVideoId && nextVideoId && prevVideoId === nextVideoId && state.mountedVideoId === nextVideoId) {
-        updateExpandedProductOnly();
+        updateExpandedShell()
       } else {
-        render();
+        render()
       }
     } catch (_error) {
-      state.live = null;
-      render();
+      state.live = null
+      render()
     }
   }
 
-  function getOrCreateSessionId() {
-    const key = 'livepro_widget_session_id';
-    const fromStorage = localStorage.getItem(key);
-    if (fromStorage) {
-      return fromStorage;
+  function applyLayoutConfig() {
+    root.style.setProperty('--livepro-width-desktop', `${widgetCfg.widthDesktop}px`)
+    root.style.setProperty('--livepro-width-mobile', widgetCfg.widthMobile ? `${widgetCfg.widthMobile}px` : 'calc(100vw - 24px)')
+    root.style.setProperty('--livepro-offset-x', `${widgetCfg.offset.x}px`)
+    root.style.setProperty('--livepro-offset-y', `${widgetCfg.offset.y}px`)
+
+    root.dataset.orientation = widgetCfg.orientation
+    root.dataset.vertical = widgetCfg.position.vertical
+    root.dataset.horizontal = widgetCfg.position.horizontal
+  }
+
+  function renderStatusPills(viewers, context) {
+    const parts = []
+
+    if (widgetCfg.indicators.showLiveBadge) {
+      const badgeClass = context === 'mini' ? 'livepro-pill livepro-pill--live livepro-pill--mini' : 'livepro-pill livepro-pill--live'
+      parts.push(`<span class="${badgeClass}"><span class="livepro-pill__dot"></span>${escapeHtml(widgetCfg.labels.liveBadge)}</span>`)
     }
 
-    const generated = 'w_' + Math.random().toString(36).slice(2, 11);
-    localStorage.setItem(key, generated);
-    return generated;
+    if (widgetCfg.indicators.showViewers && viewers) {
+      const viewersClass = context === 'mini' ? 'livepro-pill livepro-pill--ghost livepro-pill--mini' : 'livepro-pill livepro-pill--ghost'
+      parts.push(`<span class="${viewersClass}">${renderUsersIcon()}${escapeHtml(viewers)}</span>`)
+    }
+
+    return parts.join('')
+  }
+
+  function resolvePreviewImage() {
+    if (cfg.previewImageUrl) {
+      return cfg.previewImageUrl
+    }
+
+    const videoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : ''
+    if (!videoId) {
+      return ''
+    }
+
+    return `https://i.ytimg.com/vi/${encodeURIComponent(String(videoId))}/hqdefault.jpg`
+  }
+
+  function getViewerLabel() {
+    const raw = String((state.live && state.live.viewer_count) || cfg.previewViewers || '').trim()
+    return raw
+  }
+
+  function normalizeWidgetConfig(config) {
+    return {
+      widthDesktop: Number(config.widthDesktop || 392),
+      widthMobile: config.widthMobile ? Number(config.widthMobile) : null,
+      orientation: config.orientation === 'horizontal' ? 'horizontal' : 'vertical',
+      position: {
+        vertical: config.position && config.position.vertical === 'top' ? 'top' : 'bottom',
+        horizontal: config.position && config.position.horizontal === 'right' ? 'right' : 'left',
+      },
+      offset: {
+        x: Number(config.offset && config.offset.x ? config.offset.x : 16),
+        y: Number(config.offset && config.offset.y ? config.offset.y : 16),
+      },
+      autoplay: config.autoplay !== false,
+      startMuted: config.startMuted !== false,
+      labels: {
+        previewCta: String(config.labels && config.labels.previewCta ? config.labels.previewCta : 'VER AHORA'),
+        productCta: String(config.labels && config.labels.productCta ? config.labels.productCta : 'VER PRODUCTO'),
+        liveBadge: String(config.labels && config.labels.liveBadge ? config.labels.liveBadge : 'VIVO'),
+      },
+      indicators: {
+        showLiveBadge: config.indicators ? config.indicators.showLiveBadge !== false : true,
+        showViewers: config.indicators ? config.indicators.showViewers !== false : true,
+      },
+    }
+  }
+
+  function buildEmbedUrl(videoId, autoplay, muted) {
+    const params = new URLSearchParams({
+      autoplay: autoplay ? '1' : '0',
+      mute: muted ? '1' : '0',
+      playsinline: '1',
+      rel: '0',
+      controls: '1',
+      modestbranding: '1',
+    })
+
+    return `https://www.youtube.com/embed/${encodeURIComponent(String(videoId || ''))}?${params.toString()}`
   }
 
   function escapeHtml(value) {
@@ -327,15 +323,18 @@
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+      .replaceAll("'", '&#039;')
   }
 
   function escapeAttribute(value) {
-    return escapeHtml(value || '').replaceAll('`', '');
+    return escapeHtml(value || '').replaceAll('`', '')
   }
 
   function productSignature(product) {
-    if (!product) return '';
+    if (!product) {
+      return ''
+    }
+
     return [
       String(product.product_id || ''),
       String(product.variation_id || ''),
@@ -345,7 +344,7 @@
       String(product.stock || ''),
       String(product.stock_quantity || ''),
       String(product.available_qty || ''),
-    ].join('|');
+    ].join('|')
   }
 
   function getStockLabel(product) {
@@ -354,14 +353,80 @@
       product.stock_quantity ??
       product.available_qty ??
       product.qty
-    );
-    const qty = Number(raw);
+    )
+
+    const qty = Number(raw)
     if (Number.isFinite(qty) && qty > 0) {
-      return `${Math.floor(qty)} disponibles`;
+      return `${Math.floor(qty)} disponibles`
     }
-    return 'Disponible';
+
+    return 'Disponible'
   }
 
-  pollLive();
-  setInterval(pollLive, Number(cfg.pollMs || 5000));
-})();
+  function renderPlayIcon() {
+    return `
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="20" fill="currentColor"></circle>
+        <path d="M16 12.5L28 20L16 27.5V12.5Z" fill="#ffffff"></path>
+      </svg>
+    `
+  }
+
+  function renderVolumeIcon(isMuted) {
+    return isMuted
+      ? `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M11 6L8.6 8.4H5v7.2h3.6L11 18V6Z"></path>
+          <path d="M15.5 9.2L19 14.8"></path>
+          <path d="M19 9.2L15.5 14.8"></path>
+        </svg>
+      `
+      : `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M11 6L8.6 8.4H5v7.2h3.6L11 18V6Z"></path>
+          <path d="M15.2 9.2C16.7 10.3 17.6 12 17.6 13.8C17.6 15.6 16.7 17.3 15.2 18.4"></path>
+          <path d="M17.4 6.8C19.7 8.5 21 11.1 21 13.8C21 16.5 19.7 19.1 17.4 20.8"></path>
+        </svg>
+      `
+  }
+
+  function renderCloseIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 7L17 17"></path>
+        <path d="M17 7L7 17"></path>
+      </svg>
+    `
+  }
+
+  function renderUsersIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 11.2C10.9 11.2 12.4 9.7 12.4 7.8C12.4 5.9 10.9 4.4 9 4.4C7.1 4.4 5.6 5.9 5.6 7.8C5.6 9.7 7.1 11.2 9 11.2Z"></path>
+        <path d="M3.8 18.2C4.4 15.9 6.4 14.4 9 14.4C11.6 14.4 13.6 15.9 14.2 18.2"></path>
+        <path d="M16.2 10.2C17.5 10.2 18.6 9.1 18.6 7.8C18.6 6.5 17.5 5.4 16.2 5.4"></path>
+        <path d="M16.8 14.8C18.7 15.1 20.1 16.3 20.6 18.2"></path>
+      </svg>
+    `
+  }
+
+  function renderStockIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 6.5C15.2 6.5 17.8 9.1 17.8 12.3C17.8 15.5 15.2 18.1 12 18.1C8.8 18.1 6.2 15.5 6.2 12.3C6.2 9.1 8.8 6.5 12 6.5Z"></path>
+        <path d="M12 9.3V12.5L14 13.7"></path>
+      </svg>
+    `
+  }
+
+  function renderChevronIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8.5 5.8L15.2 12L8.5 18.2"></path>
+      </svg>
+    `
+  }
+
+  pollLive()
+  setInterval(pollLive, Number(cfg.pollMs || 5000))
+})()
