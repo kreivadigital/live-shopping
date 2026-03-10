@@ -13,10 +13,13 @@
 
   const state = {
     expanded: false,
+    productSheetOpen: false,
+    activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
     live: null,
     mountedVideoId: null,
     lastProductSignature: '',
+    activeProductKey: '',
   }
 
   const root = document.createElement('div')
@@ -30,6 +33,9 @@
     if (!state.live || !state.live.is_live) {
       root.className = ''
       root.innerHTML = ''
+      state.productSheetOpen = false
+      state.activePhotoIndex = 0
+      state.activeProductKey = ''
       return
     }
 
@@ -67,13 +73,15 @@
   }
 
   function renderExpanded() {
-    const product = state.live && state.live.product ? state.live.product : {}
+    const product = getProductViewModel(state.live && state.live.product ? state.live.product : {})
     const videoId = state.live.youtube_video_id || ''
     const viewers = getViewerLabel()
-    const hasActiveProduct = Number(product.product_id || 0) > 0
+    const hasActiveProduct = Boolean(product.key)
+
+    syncProductState(product)
 
     state.mountedVideoId = videoId
-    state.lastProductSignature = productSignature(product)
+    state.lastProductSignature = productSignature(product.raw)
 
     root.innerHTML = `
       <section class="livepro-shell" aria-label="Live shopping">
@@ -105,17 +113,20 @@
         <div class="livepro-shell__dock-host">
           ${hasActiveProduct ? renderProductDock(product) : ''}
         </div>
+
+        ${hasActiveProduct && state.productSheetOpen ? renderProductSheet(product) : ''}
       </section>
     `
 
-    bindExpandedInteractions()
+    bindExpandedInteractions(product)
   }
 
-  function bindExpandedInteractions() {
+  function bindExpandedInteractions(product) {
     const closeButton = root.querySelector('.livepro-close')
     if (closeButton && closeButton.dataset.bound !== '1') {
       closeButton.addEventListener('click', () => {
         state.expanded = false
+        state.productSheetOpen = false
         render()
       })
       closeButton.dataset.bound = '1'
@@ -131,18 +142,52 @@
     }
 
     const productButton = root.querySelector('.livepro-product-dock__cta')
-    if (productButton) {
+    if (productButton && productButton.dataset.bound !== '1') {
       productButton.addEventListener('click', () => {
-        const dock = root.querySelector('.livepro-product-dock')
-        if (!dock) {
-          return
-        }
-
-        dock.classList.remove('is-primed')
-        window.requestAnimationFrame(() => dock.classList.add('is-primed'))
-        window.setTimeout(() => dock.classList.remove('is-primed'), 700)
+        state.productSheetOpen = true
+        render()
       })
+      productButton.dataset.bound = '1'
     }
+
+    const sheetCloseButton = root.querySelector('.livepro-product-sheet__close')
+    if (sheetCloseButton && sheetCloseButton.dataset.bound !== '1') {
+      sheetCloseButton.addEventListener('click', () => {
+        state.productSheetOpen = false
+        render()
+      })
+      sheetCloseButton.dataset.bound = '1'
+    }
+
+    const prevButton = root.querySelector('.livepro-gallery-nav--prev')
+    if (prevButton && prevButton.dataset.bound !== '1') {
+      prevButton.addEventListener('click', () => {
+        state.activePhotoIndex = state.activePhotoIndex <= 0 ? product.gallery.length - 1 : state.activePhotoIndex - 1
+        render()
+      })
+      prevButton.dataset.bound = '1'
+    }
+
+    const nextButton = root.querySelector('.livepro-gallery-nav--next')
+    if (nextButton && nextButton.dataset.bound !== '1') {
+      nextButton.addEventListener('click', () => {
+        state.activePhotoIndex = state.activePhotoIndex >= product.gallery.length - 1 ? 0 : state.activePhotoIndex + 1
+        render()
+      })
+      nextButton.dataset.bound = '1'
+    }
+
+    root.querySelectorAll('.livepro-gallery-dot').forEach((dot) => {
+      if (dot.dataset.bound === '1') {
+        return
+      }
+
+      dot.addEventListener('click', () => {
+        state.activePhotoIndex = Number(dot.dataset.index || 0)
+        render()
+      })
+      dot.dataset.bound = '1'
+    })
   }
 
   function renderProductDock(product) {
@@ -150,7 +195,7 @@
       <div class="livepro-product-dock">
         <div class="livepro-product-dock__card">
           <div class="livepro-product-dock__image-wrap">
-            <img class="livepro-product-dock__image" src="${escapeAttribute(product.image || '')}" alt="Producto" onerror="this.style.display='none'">
+            <img class="livepro-product-dock__image" src="${escapeAttribute(product.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
           </div>
 
           <div class="livepro-product-dock__body">
@@ -158,12 +203,12 @@
               <span class="livepro-product-dock__tag">DESTACADO</span>
               <span class="livepro-product-dock__stock">
                 ${renderStockIcon()}
-                ${escapeHtml(getStockLabel(product))}
+                ${escapeHtml(product.stockLabel)}
               </span>
             </div>
 
-            <p class="livepro-product-dock__title">${escapeHtml(product.name || 'Producto destacado')}</p>
-            <p class="livepro-product-dock__price">${escapeHtml(product.price || '')}</p>
+            <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
+            <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
 
             <button class="livepro-product-dock__cta" type="button">
               ${renderChevronIcon()}
@@ -172,6 +217,83 @@
           </div>
         </div>
       </div>
+    `
+  }
+
+  function renderProductSheet(product) {
+    const galleryCount = product.gallery.length
+    const activeIndex = clamp(state.activePhotoIndex, 0, galleryCount - 1)
+    const activePhoto = product.gallery[activeIndex] || product.primaryImage
+
+    return `
+      <div class="livepro-product-sheet" role="dialog" aria-modal="false" aria-label="Detalle de producto">
+        <div class="livepro-product-sheet__handle"></div>
+        <button class="livepro-product-sheet__close" type="button" aria-label="Cerrar detalle de producto">
+          ${renderSheetCloseIcon()}
+        </button>
+
+        <div class="livepro-product-sheet__header">
+          <p class="livepro-product-sheet__step">Paso ${galleryCount ? activeIndex + 1 : 1} de ${galleryCount || 1}</p>
+          <div class="livepro-product-sheet__hero">
+            <div class="livepro-product-sheet__photo">
+              <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
+            </div>
+            <div class="livepro-product-sheet__summary">
+              <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
+              <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
+              <p class="livepro-product-sheet__stock">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="livepro-product-sheet__gallery">
+          ${galleryCount > 1 ? `
+            <div class="livepro-gallery">
+              <button class="livepro-gallery-nav livepro-gallery-nav--prev" type="button" aria-label="Foto anterior">${renderArrowIcon('left')}</button>
+              <div class="livepro-gallery__viewport">
+                <img src="${escapeAttribute(activePhoto)}" alt="${escapeAttribute(product.name)}" onerror="this.style.display='none'">
+              </div>
+              <button class="livepro-gallery-nav livepro-gallery-nav--next" type="button" aria-label="Foto siguiente">${renderArrowIcon('right')}</button>
+            </div>
+            <div class="livepro-gallery-dots">
+              ${product.gallery.map((_, index) => `
+                <button
+                  class="livepro-gallery-dot ${index === activeIndex ? 'is-active' : ''}"
+                  type="button"
+                  data-index="${index}"
+                  aria-label="Ir a foto ${index + 1}"
+                ></button>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="livepro-product-sheet__blocks">
+          ${renderInfoGroup('Color', product.colors, 'No informado')}
+          ${renderInfoGroup('Tamaño', product.sizes, 'No informado')}
+        </div>
+
+        <div class="livepro-product-sheet__footer">
+          <button class="livepro-product-sheet__continue" type="button">
+            CONTINUAR
+            ${renderChevronIcon()}
+          </button>
+        </div>
+      </div>
+    `
+  }
+
+  function renderInfoGroup(label, items, fallbackLabel) {
+    const safeItems = Array.isArray(items) ? items.filter(Boolean) : []
+    const tokens = safeItems.length > 0 ? safeItems : [fallbackLabel]
+
+    return `
+      <section class="livepro-info-group">
+        <p class="livepro-info-group__label">${escapeHtml(label)}</p>
+        <div class="livepro-info-group__tokens">
+          ${tokens.map((item) => `<span class="livepro-info-token">${escapeHtml(item)}</span>`).join('')}
+        </div>
+      </section>
     `
   }
 
@@ -185,11 +307,13 @@
       return false
     }
 
-    const product = state.live && state.live.product ? state.live.product : {}
+    const product = getProductViewModel(state.live && state.live.product ? state.live.product : {})
     const viewers = getViewerLabel()
-    const hasActiveProduct = Number(product.product_id || 0) > 0
+    const hasActiveProduct = Boolean(product.key)
     const dockHost = shell.querySelector('.livepro-shell__dock-host')
     const statusHost = shell.querySelector('.livepro-shell__status')
+
+    syncProductState(product)
 
     if (statusHost) {
       statusHost.innerHTML = renderStatusPills(viewers, 'panel')
@@ -199,8 +323,17 @@
       dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
     }
 
-    state.lastProductSignature = productSignature(product)
-    bindExpandedInteractions()
+    const existingSheet = shell.querySelector('.livepro-product-sheet')
+    if (existingSheet) {
+      existingSheet.remove()
+    }
+
+    if (hasActiveProduct && state.productSheetOpen) {
+      shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
+    }
+
+    state.lastProductSignature = productSignature(product.raw)
+    bindExpandedInteractions(product)
 
     return true
   }
@@ -243,6 +376,22 @@
     root.dataset.horizontal = widgetCfg.position.horizontal
   }
 
+  function syncProductState(product) {
+    if (!product.key) {
+      state.productSheetOpen = false
+      state.activePhotoIndex = 0
+      state.activeProductKey = ''
+      return
+    }
+
+    if (state.activeProductKey !== product.key) {
+      state.activeProductKey = product.key
+      state.activePhotoIndex = clamp(state.activePhotoIndex, 0, product.gallery.length - 1)
+    } else {
+      state.activePhotoIndex = clamp(state.activePhotoIndex, 0, product.gallery.length - 1)
+    }
+  }
+
   function renderStatusPills(viewers, context) {
     const parts = []
 
@@ -273,8 +422,47 @@
   }
 
   function getViewerLabel() {
-    const raw = String((state.live && state.live.viewer_count) || cfg.previewViewers || '').trim()
-    return raw
+    return String((state.live && state.live.viewer_count) || cfg.previewViewers || '').trim()
+  }
+
+  function getProductViewModel(product) {
+    const gallery = dedupeList([
+      product.image,
+      ...(readImageList(product.gallery)),
+      ...(readImageList(product.images)),
+      ...(readImageList(product.photos)),
+    ])
+
+    const colors = dedupeList([
+      ...(readTextList(product.colors)),
+      ...(readTextList(product.color_options)),
+      ...(readAttributeValues(product.attributes, ['color', 'colour', 'colores', 'colores'])),
+    ])
+
+    const sizes = dedupeList([
+      ...(readTextList(product.sizes)),
+      ...(readTextList(product.talles)),
+      ...(readTextList(product.size_options)),
+      ...(readAttributeValues(product.attributes, ['size', 'sizes', 'talle', 'talles', 'tamano', 'tamaño'])),
+    ])
+
+    const key = [
+      String(product.product_id || ''),
+      String(product.variation_id || ''),
+      String(product.name || ''),
+    ].join('|')
+
+    return {
+      key: key === '||' ? '' : key,
+      name: String(product.name || 'Producto destacado'),
+      price: String(product.price || ''),
+      stockLabel: getStockLabel(product),
+      primaryImage: gallery[0] || '',
+      gallery: gallery.length > 0 ? gallery : [''],
+      colors,
+      sizes,
+      raw: product,
+    }
   }
 
   function normalizeWidgetConfig(config) {
@@ -317,6 +505,108 @@
     return `https://www.youtube.com/embed/${encodeURIComponent(String(videoId || ''))}?${params.toString()}`
   }
 
+  function readImageList(value) {
+    if (!Array.isArray(value)) {
+      return []
+    }
+
+    return value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim()
+        }
+
+        if (item && typeof item === 'object') {
+          return String(item.src || item.url || item.image || '').trim()
+        }
+
+        return ''
+      })
+      .filter(Boolean)
+  }
+
+  function readTextList(value) {
+    if (!Array.isArray(value)) {
+      return []
+    }
+
+    return value
+      .map((item) => {
+        if (typeof item === 'string' || typeof item === 'number') {
+          return String(item).trim()
+        }
+
+        if (item && typeof item === 'object') {
+          return String(item.label || item.name || item.value || item.option || '').trim()
+        }
+
+        return ''
+      })
+      .filter(Boolean)
+  }
+
+  function readAttributeValues(attributes, candidates) {
+    if (!Array.isArray(attributes)) {
+      return []
+    }
+
+    const normalizedCandidates = candidates.map((candidate) => normalizeKey(candidate))
+    const values = []
+
+    attributes.forEach((attribute) => {
+      if (!attribute || typeof attribute !== 'object') {
+        return
+      }
+
+      const attrName = normalizeKey(attribute.name || attribute.slug || attribute.label || '')
+      if (!normalizedCandidates.includes(attrName)) {
+        return
+      }
+
+      if (Array.isArray(attribute.options)) {
+        values.push(...readTextList(attribute.options))
+        return
+      }
+
+      const singleValue = String(attribute.option || attribute.value || '').trim()
+      if (singleValue) {
+        values.push(singleValue)
+      }
+    })
+
+    return values
+  }
+
+  function dedupeList(values) {
+    const seen = new Set()
+
+    return values.filter((value) => {
+      const normalized = String(value || '').trim()
+      if (!normalized || seen.has(normalized)) {
+        return false
+      }
+
+      seen.add(normalized)
+      return true
+    })
+  }
+
+  function normalizeKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+  }
+
+  function clamp(value, min, max) {
+    if (!Number.isFinite(value)) {
+      return min
+    }
+
+    return Math.min(Math.max(value, min), Math.max(min, max))
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replaceAll('&', '&amp;')
@@ -344,6 +634,9 @@
       String(product.stock || ''),
       String(product.stock_quantity || ''),
       String(product.available_qty || ''),
+      JSON.stringify(product.gallery || product.images || product.photos || []),
+      JSON.stringify(product.colors || product.color_options || []),
+      JSON.stringify(product.sizes || product.talles || product.size_options || []),
     ].join('|')
   }
 
@@ -357,7 +650,7 @@
 
     const qty = Number(raw)
     if (Number.isFinite(qty) && qty > 0) {
-      return `${Math.floor(qty)} disponibles`
+      return `Solo quedan ${Math.floor(qty)} unidades`
     }
 
     return 'Disponible'
@@ -399,6 +692,15 @@
     `
   }
 
+  function renderSheetCloseIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 8L16 16"></path>
+        <path d="M16 8L8 16"></path>
+      </svg>
+    `
+  }
+
   function renderUsersIcon() {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -419,12 +721,35 @@
     `
   }
 
+  function renderStockSparkIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.5 12L9.5 14L16.5 7"></path>
+        <path d="M12 4.5L12.7 6.2L14.5 6.9L12.7 7.6L12 9.3L11.3 7.6L9.5 6.9L11.3 6.2L12 4.5Z"></path>
+      </svg>
+    `
+  }
+
   function renderChevronIcon() {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M8.5 5.8L15.2 12L8.5 18.2"></path>
       </svg>
     `
+  }
+
+  function renderArrowIcon(direction) {
+    return direction === 'left'
+      ? `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14.8 5.8L8.1 12L14.8 18.2"></path>
+        </svg>
+      `
+      : `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9.2 5.8L15.9 12L9.2 18.2"></path>
+        </svg>
+      `
   }
 
   pollLive()
