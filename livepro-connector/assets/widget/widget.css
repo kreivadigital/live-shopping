@@ -195,7 +195,7 @@
 }
 
 .livepro-shell::before {
-  padding-top: 188.8889%;
+  padding-top: 149.2537%;
 }
 
 #livepro-widget-root[data-orientation="horizontal"] .livepro-shell::before {
@@ -561,7 +561,7 @@
 }
 
 .livepro-gallery__viewport::before {
-  padding-top: 80%;
+  padding-top: 80%; /* Corresponde a aspect-ratio: 5/4 */
 }
 
 .livepro-gallery-nav {
