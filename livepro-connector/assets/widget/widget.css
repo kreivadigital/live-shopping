@@ -35,18 +35,31 @@
   isolation: isolate;
 }
 
+.livepro-mini::before,
+.livepro-shell::before,
+.livepro-gallery__viewport::before {
+  content: "";
+  display: block;
+}
+
 .livepro-mini {
   width: clamp(132px, calc(var(--livepro-width-desktop) * 0.37), 164px);
-  aspect-ratio: 0.62 / 1;
   padding: 0;
   color: #fff;
   cursor: pointer;
   background: #435046;
 }
 
+.livepro-mini::before {
+  padding-top: 161.2903%;
+}
+
 #livepro-widget-root[data-orientation="horizontal"] .livepro-mini {
   width: clamp(180px, calc(var(--livepro-width-desktop) * 0.52), 250px);
-  aspect-ratio: 1.16 / 1;
+}
+
+#livepro-widget-root[data-orientation="horizontal"] .livepro-mini::before {
+  padding-top: 86.2069%;
 }
 
 .livepro-mini__bg,
@@ -175,15 +188,18 @@
 
 .livepro-shell {
   width: min(var(--livepro-width-desktop), calc(100vw - 24px));
-  aspect-ratio: 0.67 / 1;
   background: #485449;
   opacity: 0;
   transform: translateY(16px) scale(0.95);
   transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-#livepro-widget-root[data-orientation="horizontal"] .livepro-shell {
-  aspect-ratio: 1.02 / 1;
+.livepro-shell::before {
+  padding-top: 188.8889%;
+}
+
+#livepro-widget-root[data-orientation="horizontal"] .livepro-shell::before {
+  padding-top: 98.0392%;
 }
 
 .livepro-shell.is-open {
@@ -477,6 +493,11 @@
   object-position: center;
 }
 
+.livepro-gallery__viewport img {
+  position: absolute;
+  inset: 0;
+}
+
 .livepro-product-sheet__title {
   margin: 0 0 8px;
   color: #23314f;
@@ -536,7 +557,11 @@
 }
 
 .livepro-gallery__viewport {
-  aspect-ratio: 5/4;
+  position: relative;
+}
+
+.livepro-gallery__viewport::before {
+  padding-top: 80%;
 }
 
 .livepro-gallery-nav {
@@ -580,7 +605,6 @@
   height: 6px;
   min-width: 6px;
   min-height: 6px;
-  aspect-ratio: 1 / 1;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -664,12 +688,11 @@
     width: calc(100vw - (var(--livepro-offset-x) * 2));
     height: calc(100dvh - (var(--livepro-offset-y) * 2));
     max-height: calc(100dvh - (var(--livepro-offset-y) * 2));
-    aspect-ratio: auto;
     border-radius: 32px;
   }
 
-  #livepro-widget-root[data-mobile-presentation="immersive"][data-orientation="horizontal"] .livepro-shell {
-    aspect-ratio: auto;
+  #livepro-widget-root[data-mobile-presentation="immersive"] .livepro-shell::before {
+    content: none;
   }
 
   .livepro-mini {
