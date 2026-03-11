@@ -6,6 +6,7 @@
   const cfg = window.LiveProWidgetConfig
   const widgetCfg = normalizeWidgetConfig(cfg.widget || {})
   const storeId = Number(cfg.storeId || 0)
+  const TRANSITION_MS = 300
 
   if (!storeId || !cfg.backofficeUrl) {
     return
@@ -13,7 +14,10 @@
 
   const state = {
     expanded: false,
+    shellOpening: false,
+    shellClosing: false,
     productSheetOpen: false,
+    productSheetOpening: false,
     productSheetClosing: false,
     activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
@@ -71,8 +75,7 @@
     `
 
     root.querySelector('.livepro-mini').addEventListener('click', () => {
-      state.expanded = true
-      render()
+      openShell()
     })
   }
 
@@ -89,7 +92,7 @@
     state.lastProductSignature = productSignature(product.raw)
 
     root.innerHTML = `
-      <section class="livepro-shell" aria-label="Live shopping">
+      <section class="livepro-shell ${state.shellClosing ? 'is-closing' : (state.shellOpening ? '' : 'is-open')}" aria-label="Live shopping">
         <div class="livepro-shell__media">
           <iframe
             class="livepro-shell__iframe"
@@ -124,16 +127,21 @@
     `
 
     bindExpandedInteractions(product)
+
+    if (state.shellOpening) {
+      animateShellIn()
+    }
+
+    if (state.productSheetOpening) {
+      animateProductSheetIn()
+    }
   }
 
   function bindExpandedInteractions(product) {
     const closeButton = root.querySelector('.livepro-close')
     if (closeButton && closeButton.dataset.bound !== '1') {
       closeButton.addEventListener('click', () => {
-        state.expanded = false
-        state.productSheetOpen = false
-        state.productSheetClosing = false
-        render()
+        closeShell()
       })
       closeButton.dataset.bound = '1'
     }
@@ -230,7 +238,7 @@
     const activePhoto = product.gallery[activeIndex] || product.primaryImage
 
     return `
-      <div class="livepro-product-sheet ${state.productSheetClosing ? 'is-closing' : 'is-open'}" role="dialog" aria-modal="false" aria-label="Detalle de producto">
+      <div class="livepro-product-sheet ${state.productSheetClosing ? 'is-closing' : (state.productSheetOpening ? '' : 'is-open')}" role="dialog" aria-modal="false" aria-label="Detalle de producto">
         <div class="livepro-product-sheet__handle"></div>
         <button class="livepro-product-sheet__close" type="button" aria-label="Cerrar detalle de producto">
           ${renderSheetCloseIcon()}
@@ -289,8 +297,52 @@
     `
   }
 
+  function openShell() {
+    if (state.expanded && !state.shellClosing) {
+      return
+    }
+
+    state.shellClosing = false
+    state.shellOpening = true
+    state.expanded = true
+    render()
+  }
+
+  function closeShell() {
+    if (!state.expanded || state.shellClosing) {
+      return
+    }
+
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell) {
+      state.expanded = false
+      state.shellOpening = false
+      state.shellClosing = false
+      state.productSheetOpen = false
+      state.productSheetOpening = false
+      state.productSheetClosing = false
+      render()
+      return
+    }
+
+    state.shellOpening = false
+    state.shellClosing = true
+    shell.classList.remove('is-open')
+    shell.classList.add('is-closing')
+
+    window.setTimeout(() => {
+      state.expanded = false
+      state.shellClosing = false
+      state.productSheetOpen = false
+      state.productSheetOpening = false
+      state.productSheetClosing = false
+      render()
+    }, TRANSITION_MS)
+  }
+
   function openProductSheet() {
     state.productSheetClosing = false
+    state.productSheetOpening = true
     state.productSheetOpen = true
     render()
   }
@@ -303,6 +355,7 @@
     const sheet = root.querySelector('.livepro-product-sheet')
     if (!sheet) {
       state.productSheetOpen = false
+      state.productSheetOpening = false
       state.productSheetClosing = false
       render()
       return
@@ -314,9 +367,40 @@
 
     window.setTimeout(() => {
       state.productSheetOpen = false
+      state.productSheetOpening = false
       state.productSheetClosing = false
       render()
-    }, 500)
+    }, TRANSITION_MS)
+  }
+
+  function animateShellIn() {
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell) {
+      state.shellOpening = false
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      shell.classList.add('is-open')
+      window.setTimeout(() => {
+        state.shellOpening = false
+      }, TRANSITION_MS)
+    })
+  }
+
+  function animateProductSheetIn() {
+    const sheet = root.querySelector('.livepro-product-sheet')
+    if (!sheet) {
+      state.productSheetOpening = false
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      sheet.classList.add('is-open')
+      window.setTimeout(() => {
+        state.productSheetOpening = false
+      }, TRANSITION_MS)
+    })
   }
 
   function renderInfoGroup(label, items, fallbackLabel) {

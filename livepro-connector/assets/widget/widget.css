@@ -177,10 +177,23 @@
   width: min(var(--livepro-width-desktop), calc(100vw - 24px));
   aspect-ratio: 0.67 / 1;
   background: #485449;
+  opacity: 0;
+  transform: translateY(16px) scale(0.95);
+  transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 #livepro-widget-root[data-orientation="horizontal"] .livepro-shell {
   aspect-ratio: 1.02 / 1;
+}
+
+.livepro-shell.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.livepro-shell.is-closing {
+  opacity: 0;
+  transform: translateY(16px) scale(0.95);
 }
 
 .livepro-shell__media {
@@ -250,7 +263,7 @@
   background: rgba(255, 255, 255, 0.94);
   color: #18263f;
   box-shadow: 0 16px 34px rgba(10, 17, 33, 0.26);
-  transition: transform 0.5s ease, box-shadow 0.5s ease, opacity 0.5s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
 }
 
 .livepro-product-dock__image-wrap {
@@ -363,12 +376,12 @@
   position: absolute;
   left: 18px;
   right: 18px;
-  bottom: 0px;
+  bottom: 16px;
   z-index: 7;
   min-height: 0;
   max-height: calc(100% - 104px);
   padding: 14px 22px 22px;
-  border-radius: 30px 30px 5px 5px;
+  border-radius: 30px;
   background: rgba(249, 249, 251, 0.98);
   color: #1e2d49;
   box-shadow: 0 -14px 30px rgba(8, 15, 31, 0.2);
@@ -377,7 +390,7 @@
   flex-direction: column;
   opacity: 0;
   transform: translateY(22px) scale(0.98);
-  transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease;
+  transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .livepro-product-sheet.is-open {
