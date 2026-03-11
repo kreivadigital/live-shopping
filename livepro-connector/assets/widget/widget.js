@@ -19,6 +19,7 @@
     productSheetOpen: false,
     productSheetOpening: false,
     productSheetClosing: false,
+    sheetProductSnapshot: null,
     activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
     live: null,
@@ -41,9 +42,12 @@
       root.className = ''
       root.innerHTML = ''
       state.productSheetOpen = false
+      state.productSheetOpening = false
       state.productSheetClosing = false
+      state.sheetProductSnapshot = null
       state.activePhotoIndex = 0
       state.activeProductKey = ''
+      state.lastProductSignature = ''
       return
     }
 
@@ -80,8 +84,8 @@
   }
 
   function renderExpanded() {
-    const rawProduct = state.live && state.live.product ? state.live.product : {}
-    const product = getProductViewModel(getResolvedProductSource(rawProduct))
+    const liveProduct = getLiveProductViewModel()
+    const product = getDisplayedProductViewModel(liveProduct)
     const videoId = state.live.youtube_video_id || ''
     const viewers = getViewerLabel()
     const hasActiveProduct = Boolean(product.key)
@@ -175,7 +179,7 @@
     if (prevButton && prevButton.dataset.bound !== '1') {
       prevButton.addEventListener('click', () => {
         state.activePhotoIndex = state.activePhotoIndex <= 0 ? product.gallery.length - 1 : state.activePhotoIndex - 1
-        render()
+        renderProductSheetInShell(product)
       })
       prevButton.dataset.bound = '1'
     }
@@ -184,7 +188,7 @@
     if (nextButton && nextButton.dataset.bound !== '1') {
       nextButton.addEventListener('click', () => {
         state.activePhotoIndex = state.activePhotoIndex >= product.gallery.length - 1 ? 0 : state.activePhotoIndex + 1
-        render()
+        renderProductSheetInShell(product)
       })
       nextButton.dataset.bound = '1'
     }
@@ -196,7 +200,7 @@
 
       dot.addEventListener('click', () => {
         state.activePhotoIndex = Number(dot.dataset.index || 0)
-        render()
+        renderProductSheetInShell(product)
       })
       dot.dataset.bound = '1'
     })
@@ -321,6 +325,7 @@
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
+      state.sheetProductSnapshot = null
       render()
       return
     }
@@ -336,15 +341,34 @@
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
+      state.sheetProductSnapshot = null
       render()
     }, TRANSITION_MS)
   }
 
   function openProductSheet() {
+    if (state.productSheetOpen || state.productSheetClosing) {
+      return
+    }
+
+    const liveProduct = getLiveProductViewModel()
+    if (!liveProduct.key) {
+      return
+    }
+
+    state.sheetProductSnapshot = cloneProductSnapshot(liveProduct.raw)
     state.productSheetClosing = false
     state.productSheetOpening = true
     state.productSheetOpen = true
-    render()
+
+    syncProductState(liveProduct)
+
+    if (!renderProductSheetInShell(liveProduct)) {
+      render()
+      return
+    }
+
+    animateProductSheetIn()
   }
 
   function closeProductSheet() {
@@ -357,7 +381,10 @@
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
-      render()
+      state.sheetProductSnapshot = null
+      if (!updateExpandedShell()) {
+        render()
+      }
       return
     }
 
@@ -369,7 +396,12 @@
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
-      render()
+      state.sheetProductSnapshot = null
+      sheet.remove()
+
+      if (!updateExpandedShell()) {
+        render()
+      }
     }, TRANSITION_MS)
   }
 
@@ -427,8 +459,8 @@
       return false
     }
 
-    const rawProduct = state.live && state.live.product ? state.live.product : {}
-    const product = getProductViewModel(getResolvedProductSource(rawProduct))
+    const liveProduct = getLiveProductViewModel()
+    const product = getDisplayedProductViewModel(liveProduct)
     const viewers = getViewerLabel()
     const hasActiveProduct = Boolean(product.key)
     const dockHost = shell.querySelector('.livepro-shell__dock-host')
@@ -436,8 +468,7 @@
     const nextSignature = productSignature(product.raw)
     const productChanged = nextSignature !== state.lastProductSignature
     const existingSheet = shell.querySelector('.livepro-product-sheet')
-    const existingSheetContent = existingSheet ? existingSheet.querySelector('.livepro-product-sheet__content') : null
-    const previousScrollTop = existingSheetContent ? existingSheetContent.scrollTop : 0
+    const sheetVisible = state.productSheetOpen || state.productSheetClosing
 
     syncProductState(product)
 
@@ -449,24 +480,71 @@
       dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
     }
 
-    if (productChanged) {
-      if (existingSheet) {
-        existingSheet.remove()
+    if (sheetVisible) {
+      if (!existingSheet || productChanged) {
+        renderProductSheetInShell(product)
       }
-
-      if (hasActiveProduct && (state.productSheetOpen || state.productSheetClosing)) {
-        shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
-        const nextSheetContent = shell.querySelector('.livepro-product-sheet__content')
-        if (nextSheetContent) {
-          nextSheetContent.scrollTop = previousScrollTop
-        }
-      }
+    } else if (existingSheet) {
+      existingSheet.remove()
     }
 
     state.lastProductSignature = nextSignature
     bindExpandedInteractions(product)
 
     return true
+  }
+
+  function getLiveProductViewModel() {
+    const rawProduct = state.live && state.live.product ? state.live.product : {}
+    return getProductViewModel(getResolvedProductSource(rawProduct))
+  }
+
+  function getDisplayedProductViewModel(liveProduct) {
+    if (state.sheetProductSnapshot && (state.productSheetOpen || state.productSheetClosing)) {
+      return getProductViewModel(state.sheetProductSnapshot)
+    }
+
+    return liveProduct || getLiveProductViewModel()
+  }
+
+  function renderProductSheetInShell(product) {
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell) {
+      return false
+    }
+
+    const existingSheet = shell.querySelector('.livepro-product-sheet')
+    const existingSheetContent = existingSheet ? existingSheet.querySelector('.livepro-product-sheet__content') : null
+    const previousScrollTop = existingSheetContent ? existingSheetContent.scrollTop : 0
+
+    if (!product.key) {
+      if (existingSheet) {
+        existingSheet.remove()
+      }
+      return true
+    }
+
+    if (existingSheet) {
+      existingSheet.outerHTML = renderProductSheet(product)
+    } else {
+      shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
+    }
+
+    const nextSheetContent = shell.querySelector('.livepro-product-sheet__content')
+    if (nextSheetContent) {
+      nextSheetContent.scrollTop = previousScrollTop
+    }
+
+    bindExpandedInteractions(product)
+    return true
+  }
+
+  function cloneProductSnapshot(product) {
+    try {
+      return JSON.parse(JSON.stringify(product || {}))
+    } catch (_error) {
+      return Object.assign({}, product || {})
+    }
   }
 
   async function pollLive() {
