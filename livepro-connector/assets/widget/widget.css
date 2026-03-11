@@ -250,6 +250,7 @@
   background: rgba(255, 255, 255, 0.94);
   color: #18263f;
   box-shadow: 0 16px 34px rgba(10, 17, 33, 0.26);
+  transition: transform 0.5s ease, box-shadow 0.5s ease, opacity 0.5s ease;
 }
 
 .livepro-product-dock__image-wrap {
@@ -360,20 +361,33 @@
 
 .livepro-product-sheet {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 18px;
+  right: 18px;
+  bottom: 0px;
   z-index: 7;
   min-height: 0;
-  max-height: calc(100% - 76px);
+  max-height: calc(100% - 104px);
   padding: 14px 22px 22px;
-  border-radius: 32px 32px 30px 30px;
+  border-radius: 30px 30px 5px 5px;
   background: rgba(249, 249, 251, 0.98);
   color: #1e2d49;
   box-shadow: 0 -14px 30px rgba(8, 15, 31, 0.2);
   backdrop-filter: blur(14px);
   display: flex;
   flex-direction: column;
+  opacity: 0;
+  transform: translateY(22px) scale(0.98);
+  transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease;
+}
+
+.livepro-product-sheet.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.livepro-product-sheet.is-closing {
+  opacity: 0;
+  transform: translateY(18px) scale(0.98);
 }
 
 .livepro-product-sheet__handle {
@@ -397,7 +411,7 @@
   border: 0;
   border-radius: 50%;
   color: #7d8ba6;
-  background: #eef2f8;
+  background: #e9e9e9;
   cursor: pointer;
 }
 
@@ -446,7 +460,8 @@
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center;
 }
 
 .livepro-product-sheet__title {
@@ -508,7 +523,7 @@
 }
 
 .livepro-gallery__viewport {
-  aspect-ratio: 16/9;
+  aspect-ratio: 5/4;
 }
 
 .livepro-gallery-nav {
@@ -541,17 +556,17 @@
   justify-content: center;
   align-content: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 1px;
   margin-bottom: 18px;
 }
 
 .livepro-gallery-dot {
   display: block;
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  min-width: 8px;
-  min-height: 8px;
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  min-height: 6px;
   aspect-ratio: 1 / 1;
   padding: 0;
   border: 0;
@@ -592,7 +607,7 @@
   align-items: center;
   justify-content: center;
   min-width: 50px;
-  min-height: 44px;
+  min-height: 35px;
   padding: 0 12px;
   border-radius: 14px;
   border: 1px solid #d6ddec;
@@ -675,9 +690,12 @@
   }
 
   .livepro-product-sheet {
-    max-height: calc(100% - 62px);
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    max-height: calc(100% - 86px);
     padding: 14px 16px 18px;
-    border-radius: 28px 28px 26px 26px;
+    border-radius: 26px;
   }
 
   .livepro-product-sheet__header {

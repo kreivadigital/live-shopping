@@ -14,6 +14,7 @@
   const state = {
     expanded: false,
     productSheetOpen: false,
+    productSheetClosing: false,
     activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
     live: null,
@@ -36,6 +37,7 @@
       root.className = ''
       root.innerHTML = ''
       state.productSheetOpen = false
+      state.productSheetClosing = false
       state.activePhotoIndex = 0
       state.activeProductKey = ''
       return
@@ -117,7 +119,7 @@
           ${hasActiveProduct ? renderProductDock(product) : ''}
         </div>
 
-        ${hasActiveProduct && state.productSheetOpen ? renderProductSheet(product) : ''}
+        ${hasActiveProduct && (state.productSheetOpen || state.productSheetClosing) ? renderProductSheet(product) : ''}
       </section>
     `
 
@@ -130,6 +132,7 @@
       closeButton.addEventListener('click', () => {
         state.expanded = false
         state.productSheetOpen = false
+        state.productSheetClosing = false
         render()
       })
       closeButton.dataset.bound = '1'
@@ -147,8 +150,7 @@
     const productButton = root.querySelector('.livepro-product-dock__cta')
     if (productButton && productButton.dataset.bound !== '1') {
       productButton.addEventListener('click', () => {
-        state.productSheetOpen = true
-        render()
+        openProductSheet()
       })
       productButton.dataset.bound = '1'
     }
@@ -156,8 +158,7 @@
     const sheetCloseButton = root.querySelector('.livepro-product-sheet__close')
     if (sheetCloseButton && sheetCloseButton.dataset.bound !== '1') {
       sheetCloseButton.addEventListener('click', () => {
-        state.productSheetOpen = false
-        render()
+        closeProductSheet()
       })
       sheetCloseButton.dataset.bound = '1'
     }
@@ -229,7 +230,7 @@
     const activePhoto = product.gallery[activeIndex] || product.primaryImage
 
     return `
-      <div class="livepro-product-sheet" role="dialog" aria-modal="false" aria-label="Detalle de producto">
+      <div class="livepro-product-sheet ${state.productSheetClosing ? 'is-closing' : 'is-open'}" role="dialog" aria-modal="false" aria-label="Detalle de producto">
         <div class="livepro-product-sheet__handle"></div>
         <button class="livepro-product-sheet__close" type="button" aria-label="Cerrar detalle de producto">
           ${renderSheetCloseIcon()}
@@ -288,6 +289,36 @@
     `
   }
 
+  function openProductSheet() {
+    state.productSheetClosing = false
+    state.productSheetOpen = true
+    render()
+  }
+
+  function closeProductSheet() {
+    if (!state.productSheetOpen || state.productSheetClosing) {
+      return
+    }
+
+    const sheet = root.querySelector('.livepro-product-sheet')
+    if (!sheet) {
+      state.productSheetOpen = false
+      state.productSheetClosing = false
+      render()
+      return
+    }
+
+    state.productSheetClosing = true
+    sheet.classList.remove('is-open')
+    sheet.classList.add('is-closing')
+
+    window.setTimeout(() => {
+      state.productSheetOpen = false
+      state.productSheetClosing = false
+      render()
+    }, 500)
+  }
+
   function renderInfoGroup(label, items, fallbackLabel) {
     const safeItems = Array.isArray(items) ? items.filter(Boolean) : []
     const tokens = safeItems.length > 0 ? safeItems : [fallbackLabel]
@@ -339,7 +370,7 @@
         existingSheet.remove()
       }
 
-      if (hasActiveProduct && state.productSheetOpen) {
+      if (hasActiveProduct && (state.productSheetOpen || state.productSheetClosing)) {
         shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
         const nextSheetContent = shell.querySelector('.livepro-product-sheet__content')
         if (nextSheetContent) {
@@ -396,6 +427,7 @@
   function syncProductState(product) {
     if (!product.key) {
       state.productSheetOpen = false
+      state.productSheetClosing = false
       state.activePhotoIndex = 0
       state.activeProductKey = ''
       return
