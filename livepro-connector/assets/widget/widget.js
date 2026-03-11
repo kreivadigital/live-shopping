@@ -589,7 +589,7 @@
     return {
       key: key === '||' ? '' : key,
       name: String(product.name || 'Producto destacado'),
-      price: String(product.price || ''),
+      price: formatPrice(String(product.price || '')),
       stockLabel: getStockLabel(product),
       primaryImage: gallery[0] || '',
       gallery: gallery.length > 0 ? gallery : [''],
@@ -626,6 +626,20 @@
       },
       productDataStrategy: String(config.productDataStrategy || 'livepro_with_fallback'),
     }
+  }
+
+  function formatPrice(price) {
+    const value = String(price || '').trim()
+
+    if (value === '') {
+      return ''
+    }
+
+    if (value.includes('$')) {
+      return value
+    }
+
+    return `$${value}`
   }
 
   function ensureProductFallback(product) {
