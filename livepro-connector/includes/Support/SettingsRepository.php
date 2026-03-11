@@ -29,6 +29,9 @@ final class SettingsRepository
                 : 'pending',
             'widget_width_desktop' => $this->sanitizeNumber($input['widget_width_desktop'] ?? 392, 280, 640, 392),
             'widget_width_mobile' => $this->sanitizeNullableNumber($input['widget_width_mobile'] ?? '', 120, 480),
+            'widget_mobile_presentation_mode' => in_array((string) ($input['widget_mobile_presentation_mode'] ?? ''), ['floating', 'immersive'], true)
+                ? (string) $input['widget_mobile_presentation_mode']
+                : 'floating',
             'widget_orientation' => in_array((string) ($input['widget_orientation'] ?? ''), ['vertical', 'horizontal'], true)
                 ? (string) $input['widget_orientation']
                 : 'vertical',
@@ -71,6 +74,7 @@ final class SettingsRepository
             'order_status' => 'pending',
             'widget_width_desktop' => 392,
             'widget_width_mobile' => '',
+            'widget_mobile_presentation_mode' => 'floating',
             'widget_orientation' => 'vertical',
             'widget_position_vertical' => 'bottom',
             'widget_position_horizontal' => 'left',

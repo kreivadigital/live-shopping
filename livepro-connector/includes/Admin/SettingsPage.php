@@ -296,7 +296,7 @@ final class SettingsPage
             [
                 'title' => 'Layout del widget',
                 'description' => 'Control inicial de tamaño, orientación y posición del widget flotante.',
-                'fields' => ['widget_width_desktop', 'widget_width_mobile', 'widget_orientation', 'widget_position_vertical', 'widget_position_horizontal', 'widget_offset_x', 'widget_offset_y'],
+                'fields' => ['widget_width_desktop', 'widget_width_mobile', 'widget_mobile_presentation_mode', 'widget_orientation', 'widget_position_vertical', 'widget_position_horizontal', 'widget_offset_x', 'widget_offset_y'],
             ],
             [
                 'title' => 'Comportamiento',
@@ -394,6 +394,15 @@ final class SettingsPage
                 'max' => 480,
                 'placeholder' => 'Auto',
             ],
+            'widget_mobile_presentation_mode' => [
+                'label' => 'Presentación mobile',
+                'type' => 'select',
+                'description' => 'Define si en mobile el widget se comporta como tarjeta flotante o como vista inmersiva casi a pantalla completa, sin overlay oscuro.',
+                'options' => [
+                    'floating' => 'Flotante',
+                    'immersive' => 'Inmersivo',
+                ],
+            ],
             'widget_orientation' => [
                 'label' => 'Orientación',
                 'type' => 'select',
@@ -476,9 +485,10 @@ final class SettingsPage
             [
                 'label' => 'Layout',
                 'value' => sprintf(
-                    '%s / %spx',
+                    '%s / %spx / %s',
                     ucfirst((string) ($settings['widget_orientation'] ?? 'vertical')),
-                    (string) ($settings['widget_width_desktop'] ?? 392)
+                    (string) ($settings['widget_width_desktop'] ?? 392),
+                    ($settings['widget_mobile_presentation_mode'] ?? 'floating') === 'immersive' ? 'Mobile inmersivo' : 'Mobile flotante'
                 ),
             ],
             [

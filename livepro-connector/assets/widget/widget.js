@@ -420,6 +420,7 @@
     root.style.setProperty('--livepro-offset-y', `${widgetCfg.offset.y}px`)
 
     root.dataset.orientation = widgetCfg.orientation
+    root.dataset.mobilePresentation = widgetCfg.mobilePresentationMode
     root.dataset.vertical = widgetCfg.position.vertical
     root.dataset.horizontal = widgetCfg.position.horizontal
   }
@@ -518,6 +519,7 @@
     return {
       widthDesktop: Number(config.widthDesktop || 392),
       widthMobile: config.widthMobile ? Number(config.widthMobile) : null,
+      mobilePresentationMode: config.mobilePresentationMode === 'immersive' ? 'immersive' : 'floating',
       orientation: config.orientation === 'horizontal' ? 'horizontal' : 'vertical',
       position: {
         vertical: config.position && config.position.vertical === 'top' ? 'top' : 'bottom',
