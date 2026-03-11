@@ -1,6 +1,6 @@
 .livepro-admin-page {
   max-width: 1380px;
-  margin-top: 24px;
+  margin: 24px auto;
   color: #132238;
 }
 
@@ -258,23 +258,31 @@
 
 .livepro-status-list__item {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
   border-radius: 14px;
   background: #f8faff;
   border: 1px solid #e6ecf7;
+  min-width: 0;
 }
 
 .livepro-status-list__label {
   color: #64758f;
   font-weight: 600;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .livepro-status-list__value {
   color: #15294a;
   font-weight: 700;
   text-align: right;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .livepro-inline-form .button {

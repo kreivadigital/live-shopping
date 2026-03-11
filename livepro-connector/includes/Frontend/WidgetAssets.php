@@ -63,6 +63,7 @@ final class WidgetAssets
                 'widthMobile' => ($settings['widget_width_mobile'] ?? '') === ''
                     ? null
                     : (int) $settings['widget_width_mobile'],
+                'mobilePresentationMode' => (string) ($settings['widget_mobile_presentation_mode'] ?? 'floating'),
                 'orientation' => (string) ($settings['widget_orientation'] ?? 'vertical'),
                 'position' => [
                     'vertical' => (string) ($settings['widget_position_vertical'] ?? 'bottom'),
