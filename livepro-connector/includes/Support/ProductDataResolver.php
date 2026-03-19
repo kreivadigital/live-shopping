@@ -35,6 +35,7 @@ final class ProductDataResolver
             $this->matchAttributeValues($parentAttributes, ['color', 'colour', 'colores']),
             $this->matchAttributeValues($variationAttributes, ['color', 'colour', 'colores'])
         ));
+        $colorOptions = $this->collectColorOptions($baseProduct, $colors);
 
         $sizes = $this->dedupeValues(array_merge(
             $this->matchAttributeValues($parentAttributes, ['size', 'sizes', 'talle', 'talles', 'tamano', 'tamaño']),
@@ -49,6 +50,7 @@ final class ProductDataResolver
             'image' => $gallery[0] ?? '',
             'gallery' => $gallery,
             'colors' => $colors,
+            'color_option_details' => $colorOptions,
             'sizes' => $sizes,
         ];
     }
@@ -89,6 +91,83 @@ final class ProductDataResolver
         }
 
         return $this->dedupeValues($urls);
+    }
+
+    /**
+     * @param string[] $knownColors
+     * @return array<int, array{label: string, image: string, variation_id: ?int, disabled: bool}>
+     */
+    private function collectColorOptions(WC_Product $baseProduct, array $knownColors): array
+    {
+        $ordered = [];
+        $indexByKey = [];
+
+        foreach ($knownColors as $color) {
+            $normalized = trim((string) $color);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $key = $this->normalizeKey($normalized);
+            $indexByKey[$key] = count($ordered);
+            $ordered[] = [
+                'label' => $normalized,
+                'image' => '',
+                'variation_id' => null,
+                'disabled' => true,
+            ];
+        }
+
+        foreach ($baseProduct->get_children() as $variationId) {
+            $variation = wc_get_product((int) $variationId);
+            if (!$variation instanceof WC_Product_Variation) {
+                continue;
+            }
+
+            $variationAttributes = $this->extractVariationAttributeGroups($variation);
+            $matchedColors = $this->matchAttributeValues($variationAttributes, ['color', 'colour', 'colores']);
+            if (empty($matchedColors)) {
+                continue;
+            }
+
+            $image = '';
+            $imageId = $variation->get_image_id();
+            if ($imageId > 0) {
+                $image = (string) wp_get_attachment_image_url($imageId, 'large');
+            }
+
+            foreach ($matchedColors as $colorLabel) {
+                $normalizedLabel = trim((string) $colorLabel);
+                if ($normalizedLabel === '') {
+                    continue;
+                }
+
+                $key = $this->normalizeKey($normalizedLabel);
+                if (!isset($indexByKey[$key])) {
+                    $indexByKey[$key] = count($ordered);
+                    $ordered[] = [
+                        'label' => $normalizedLabel,
+                        'image' => '',
+                        'variation_id' => null,
+                        'disabled' => true,
+                    ];
+                }
+
+                $entryIndex = $indexByKey[$key];
+                $existing = $ordered[$entryIndex];
+
+                if ($image !== '' && ($existing['image'] === '' || $existing['disabled'])) {
+                    $ordered[$entryIndex] = [
+                        'label' => $existing['label'] !== '' ? $existing['label'] : $normalizedLabel,
+                        'image' => $image,
+                        'variation_id' => (int) $variation->get_id(),
+                        'disabled' => false,
+                    ];
+                }
+            }
+        }
+
+        return $ordered;
     }
 
     /**

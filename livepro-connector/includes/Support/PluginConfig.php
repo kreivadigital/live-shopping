@@ -4,7 +4,7 @@ namespace LiveProConnector\Support;
 
 final class PluginConfig
 {
-    public const VERSION = '0.8.0';
+    public const VERSION = '0.8.7';
     public const OPTION_KEY = 'livepro_connector_settings';
     public const SETTINGS_GROUP = 'livepro_connector_group';
     public const SETTINGS_SECTION = 'livepro_main_section';

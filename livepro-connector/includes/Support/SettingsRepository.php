@@ -47,7 +47,12 @@ final class SettingsRepository
             'widget_start_muted' => !empty($input['widget_start_muted']) ? 1 : 0,
             'widget_preview_cta_label' => sanitize_text_field((string) ($input['widget_preview_cta_label'] ?? 'VER AHORA')),
             'widget_product_cta_label' => sanitize_text_field((string) ($input['widget_product_cta_label'] ?? 'VER PRODUCTO')),
+            'widget_product_tag_label' => sanitize_text_field((string) ($input['widget_product_tag_label'] ?? 'DESTACADO')),
             'widget_live_badge_label' => sanitize_text_field((string) ($input['widget_live_badge_label'] ?? 'VIVO')),
+            'widget_product_price_color' => $this->sanitizeHexColor($input['widget_product_price_color'] ?? '#4f4bf0', '#4f4bf0'),
+            'widget_product_tag_color' => $this->sanitizeHexColor($input['widget_product_tag_color'] ?? '#8b9bbb', '#8b9bbb'),
+            'widget_product_cta_background_color' => $this->sanitizeHexColor($input['widget_product_cta_background_color'] ?? '#4f4bf0', '#4f4bf0'),
+            'widget_product_cta_text_color' => $this->sanitizeHexColor($input['widget_product_cta_text_color'] ?? '#ffffff', '#ffffff'),
             'widget_show_live_badge' => !empty($input['widget_show_live_badge']) ? 1 : 0,
             'widget_show_viewers' => !empty($input['widget_show_viewers']) ? 1 : 0,
             'widget_product_data_strategy' => in_array((string) ($input['widget_product_data_strategy'] ?? ''), ['livepro_only', 'livepro_with_fallback'], true)
@@ -84,7 +89,12 @@ final class SettingsRepository
             'widget_start_muted' => 1,
             'widget_preview_cta_label' => 'VER AHORA',
             'widget_product_cta_label' => 'VER PRODUCTO',
+            'widget_product_tag_label' => 'DESTACADO',
             'widget_live_badge_label' => 'VIVO',
+            'widget_product_price_color' => '#4f4bf0',
+            'widget_product_tag_color' => '#8b9bbb',
+            'widget_product_cta_background_color' => '#4f4bf0',
+            'widget_product_cta_text_color' => '#ffffff',
             'widget_show_live_badge' => 1,
             'widget_show_viewers' => 1,
             'widget_product_data_strategy' => 'livepro_with_fallback',
@@ -117,5 +127,12 @@ final class SettingsRepository
         }
 
         return (string) $number;
+    }
+
+    private function sanitizeHexColor($value, string $fallback): string
+    {
+        $sanitized = sanitize_hex_color((string) $value);
+
+        return is_string($sanitized) && $sanitized !== '' ? $sanitized : $fallback;
     }
 }

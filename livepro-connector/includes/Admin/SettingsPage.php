@@ -271,6 +271,10 @@ final class SettingsPage
                 echo '<input id="' . esc_attr($inputId) . '" type="number" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '"' . $placeholder . $min . $max . $step . '>';
                 break;
 
+            case 'color':
+                echo '<input id="' . esc_attr($inputId) . '" type="color" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '">';
+                break;
+
             default:
                 $type = $field['type'] === 'password' ? 'password' : ($field['type'] === 'url' ? 'url' : 'text');
                 echo '<input id="' . esc_attr($inputId) . '" type="' . esc_attr($type) . '" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '"' . $placeholder . '>';
@@ -291,7 +295,12 @@ final class SettingsPage
             [
                 'title' => 'Preview y contenido',
                 'description' => 'Ajustes del estado minimizado y estrategia de datos para producto.',
-                'fields' => ['preview_image_url', 'preview_viewers', 'widget_preview_cta_label', 'widget_product_cta_label', 'widget_live_badge_label', 'widget_product_data_strategy'],
+                'fields' => ['preview_image_url', 'preview_viewers', 'widget_preview_cta_label', 'widget_product_cta_label', 'widget_product_tag_label', 'widget_live_badge_label', 'widget_product_data_strategy'],
+            ],
+            [
+                'title' => 'Apariencia de producto',
+                'description' => 'Personaliza los colores del precio y del CTA del dock de producto.',
+                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color'],
             ],
             [
                 'title' => 'Layout del widget',
@@ -365,10 +374,35 @@ final class SettingsPage
                 'type' => 'text',
                 'description' => 'Texto del botón que abrirá el bottom sheet de producto.',
             ],
+            'widget_product_tag_label' => [
+                'label' => 'Texto destacado',
+                'type' => 'text',
+                'description' => 'Texto visible en el tag superior del dock de producto.',
+            ],
             'widget_live_badge_label' => [
                 'label' => 'Label en vivo',
                 'type' => 'text',
                 'description' => 'Texto del badge superior del estado cerrado y abierto.',
+            ],
+            'widget_product_price_color' => [
+                'label' => 'Color del precio',
+                'type' => 'color',
+                'description' => 'Se aplica al precio del producto tanto en el dock como en el sheet.',
+            ],
+            'widget_product_tag_color' => [
+                'label' => 'Color destacado',
+                'type' => 'color',
+                'description' => 'Color del texto del tag livepro-product-dock__tag.',
+            ],
+            'widget_product_cta_background_color' => [
+                'label' => 'Fondo CTA producto',
+                'type' => 'color',
+                'description' => 'Color de fondo del botón livepro-product-dock__cta.',
+            ],
+            'widget_product_cta_text_color' => [
+                'label' => 'Texto CTA producto',
+                'type' => 'color',
+                'description' => 'Color del texto e icono del botón livepro-product-dock__cta.',
             ],
             'widget_product_data_strategy' => [
                 'label' => 'Estrategia de datos',

@@ -149,6 +149,7 @@
 .livepro-field input[type="password"],
 .livepro-field input[type="url"],
 .livepro-field input[type="number"],
+.livepro-field input[type="color"],
 .livepro-field select {
   width: 100%;
   min-height: 44px;
@@ -158,6 +159,10 @@
   background: #fbfcfe;
   color: #192b47;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.livepro-field input[type="color"] {
+  padding: 6px;
 }
 
 .livepro-field input:focus,
