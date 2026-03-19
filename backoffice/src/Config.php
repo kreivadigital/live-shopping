@@ -6,6 +6,9 @@ final class Config
 {
     private static bool $loaded = false;
 
+    /**
+     * Loads environment variables from the project .env file once.
+     */
     public static function load(string $basePath): void
     {
         if (self::$loaded) {
@@ -43,6 +46,9 @@ final class Config
         self::$loaded = true;
     }
 
+    /**
+     * Returns a configuration value from the process environment.
+     */
     public static function get(string $key, ?string $default = null): ?string
     {
         $value = getenv($key);
@@ -53,6 +59,9 @@ final class Config
         return (string) $value;
     }
 
+    /**
+     * Removes matching wrapping quotes from a raw environment value.
+     */
     private static function stripQuotes(string $value): string
     {
         $len = strlen($value);

@@ -8,6 +8,9 @@ final class Database
 {
     private static ?PDO $pdo = null;
 
+    /**
+     * Returns the shared PDO connection and applies pending schema migrations.
+     */
     public static function connection(): PDO
     {
         if (self::$pdo !== null) {
@@ -29,6 +32,9 @@ final class Database
         return self::$pdo;
     }
 
+    /**
+     * Creates the MySQL connection used by the backoffice.
+     */
     private static function connectMysql(): PDO
     {
         if (PHP_VERSION_ID < 80000) {
@@ -53,6 +59,9 @@ final class Database
         ]);
     }
 
+    /**
+     * Creates the SQLite connection used for local storage.
+     */
     private static function connectSqlite(): PDO
     {
         $storagePath = __DIR__ . '/../storage/livepro.sqlite';
@@ -61,6 +70,9 @@ final class Database
         return new PDO($dsn);
     }
 
+    /**
+     * Ensures the SQLite schema contains the tables and columns required by the app.
+     */
     private static function migrateSqlite(PDO $pdo): void
     {
         $pdo->exec(
@@ -147,16 +159,22 @@ final class Database
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 store_id INTEGER NOT NULL,
                 status TEXT NOT NULL,
+                job_type TEXT NOT NULL DEFAULT \'sync_full\',
                 sync_token TEXT NOT NULL,
                 current_page INTEGER NOT NULL DEFAULT 1,
                 inserted_count INTEGER NOT NULL DEFAULT 0,
                 processed_products INTEGER NOT NULL DEFAULT 0,
+                total_products INTEGER NOT NULL DEFAULT 0,
+                total_pages INTEGER NOT NULL DEFAULT 0,
                 message TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (store_id) REFERENCES stores(id)
             )'
         );
+        self::ensureColumnSqlite($pdo, 'sync_jobs', 'job_type', 'TEXT NOT NULL DEFAULT \'sync_full\'');
+        self::ensureColumnSqlite($pdo, 'sync_jobs', 'total_products', 'INTEGER NOT NULL DEFAULT 0');
+        self::ensureColumnSqlite($pdo, 'sync_jobs', 'total_pages', 'INTEGER NOT NULL DEFAULT 0');
 
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS intent_orders (
@@ -182,6 +200,9 @@ final class Database
         );
     }
 
+    /**
+     * Ensures the MySQL schema contains the tables and columns required by the app.
+     */
     private static function migrateMysql(PDO $pdo): void
     {
         $pdo->exec(
@@ -299,10 +320,13 @@ final class Database
                 id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 store_id INT UNSIGNED NOT NULL,
                 status VARCHAR(30) NOT NULL,
+                job_type VARCHAR(40) NOT NULL DEFAULT \'sync_full\',
                 sync_token VARCHAR(64) NOT NULL,
                 current_page INT UNSIGNED NOT NULL DEFAULT 1,
                 inserted_count INT UNSIGNED NOT NULL DEFAULT 0,
                 processed_products INT UNSIGNED NOT NULL DEFAULT 0,
+                total_products INT UNSIGNED NOT NULL DEFAULT 0,
+                total_pages INT UNSIGNED NOT NULL DEFAULT 0,
                 message VARCHAR(255) NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -310,8 +334,14 @@ final class Database
                 CONSTRAINT fk_sync_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        self::ensureColumnMysql($pdo, 'sync_jobs', 'job_type', 'VARCHAR(40) NOT NULL DEFAULT \'sync_full\'');
+        self::ensureColumnMysql($pdo, 'sync_jobs', 'total_products', 'INT UNSIGNED NOT NULL DEFAULT 0');
+        self::ensureColumnMysql($pdo, 'sync_jobs', 'total_pages', 'INT UNSIGNED NOT NULL DEFAULT 0');
     }
 
+    /**
+     * Adds a missing column to a SQLite table.
+     */
     private static function ensureColumnSqlite(PDO $pdo, string $table, string $column, string $definition): void
     {
         $stmt = $pdo->query('PRAGMA table_info(' . $table . ')');
@@ -326,6 +356,9 @@ final class Database
         $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
     }
 
+    /**
+     * Adds a missing column to a MySQL table.
+     */
     private static function ensureColumnMysql(PDO $pdo, string $table, string $column, string $definition): void
     {
         $stmt = $pdo->prepare(

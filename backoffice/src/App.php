@@ -9,11 +9,17 @@ final class App
 {
     private PDO $db;
 
+    /**
+     * Boots the application with a shared database connection.
+     */
     public function __construct()
     {
         $this->db = Database::connection();
     }
 
+    /**
+     * Dispatches the incoming request to the API or web layer.
+     */
     public function handle(string $method, string $path): void
     {
         if ($this->isApiRequest($path)) {
@@ -24,11 +30,17 @@ final class App
         $this->handleWeb($method, $path);
     }
 
+    /**
+     * Determines whether the requested path belongs to the API surface.
+     */
     private function isApiRequest(string $path): bool
     {
         return str_starts_with($path, '/api/');
     }
 
+    /**
+     * Routes API requests to the corresponding controller action.
+     */
     private function handleApi(string $method, string $path): void
     {
         $this->setCors();
@@ -56,6 +68,9 @@ final class App
         jsonResponse(['error' => 'Not found'], 404);
     }
 
+    /**
+     * Routes authenticated backoffice requests to their screen handlers.
+     */
     private function handleWeb(string $method, string $path): void
     {
         if ($path === '/' || $path === '/admin') {
@@ -132,6 +147,11 @@ final class App
             return;
         }
 
+        if ($path === '/app/inventory/clear' && $method === 'POST') {
+            $this->clearInventory((int) $user['id']);
+            return;
+        }
+
         if ($path === '/app/inventory/sync/run' && $method === 'POST') {
             $this->runInventorySyncBatch((int) $user['id']);
             return;
@@ -146,6 +166,9 @@ final class App
         echo 'Not found';
     }
 
+    /**
+     * Returns the currently authenticated user from the session.
+     */
     private function currentUser(): ?array
     {
         $userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
@@ -160,6 +183,9 @@ final class App
         return $user ?: null;
     }
 
+    /**
+     * Ensures there is an authenticated user before continuing.
+     */
     private function requireUser(): array
     {
         $user = $this->currentUser();
@@ -170,6 +196,23 @@ final class App
         return $user;
     }
 
+    /**
+     * Detects whether the current request expects a JSON response.
+     */
+    private function expectsJsonRequest(): bool
+    {
+        $requestedWith = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
+        if ($requestedWith === 'xmlhttprequest') {
+            return true;
+        }
+
+        $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
+        return str_contains($accept, 'application/json');
+    }
+
+    /**
+     * Creates a new backoffice user and starts the session.
+     */
     private function registerUser(): void
     {
         $fullName = trim((string) ($_POST['full_name'] ?? ''));
@@ -213,6 +256,9 @@ final class App
         redirectTo('/app/store-connection');
     }
 
+    /**
+     * Authenticates a user against the stored credentials.
+     */
     private function loginUser(): void
     {
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
@@ -232,6 +278,9 @@ final class App
         redirectTo('/app/store-connection');
     }
 
+    /**
+     * Renders the login screen.
+     */
     private function renderLogin(): void
     {
         $flash = pullFlash();
@@ -239,6 +288,9 @@ final class App
         include __DIR__ . '/../views/auth-login.php';
     }
 
+    /**
+     * Renders the registration screen.
+     */
     private function renderRegister(): void
     {
         $flash = pullFlash();
@@ -246,6 +298,9 @@ final class App
         include __DIR__ . '/../views/auth-register.php';
     }
 
+    /**
+     * Creates or updates the WooCommerce store connection for the user.
+     */
     private function saveStoreConnection(int $userId): void
     {
         $siteUrl = trim((string) ($_POST['site_url'] ?? ''));
@@ -318,6 +373,9 @@ final class App
         redirectTo('/app/store-connection');
     }
 
+    /**
+     * Renders the store connection screen.
+     */
     private function renderStoreConnection(int $userId): void
     {
         $store = $this->findStoreByUserId($userId);
@@ -327,6 +385,9 @@ final class App
         include __DIR__ . '/../views/app-store-connection.php';
     }
 
+    /**
+     * Stores the YouTube live connection settings for the active store.
+     */
     private function saveLiveConnection(int $userId): void
     {
         $store = $this->findStoreByUserId($userId);
@@ -364,6 +425,9 @@ final class App
         redirectTo('/app/live-connection');
     }
 
+    /**
+     * Renders the live connection configuration screen.
+     */
     private function renderLiveConnection(int $userId): void
     {
         $store = $this->findStoreByUserId($userId);
@@ -374,25 +438,46 @@ final class App
         include __DIR__ . '/../views/app-live-connection.php';
     }
 
+    /**
+     * Handles AJAX and form actions for the live console.
+     */
     private function handleLiveConsoleAction(int $userId): void
     {
+        $expectsJson = $this->expectsJsonRequest();
         $store = $this->findStoreByUserId($userId);
         if (!$store) {
+            if ($expectsJson) {
+                jsonResponse(['ok' => false, 'error' => 'Primero configura la conexión de tienda.'], 422);
+                return;
+            }
             setFlash('error', 'Primero configura la conexión de tienda.');
             redirectTo('/app/store-connection');
         }
 
         $action = (string) ($_POST['action'] ?? '');
+        $query = $this->currentLiveConsoleQuery();
         $sessionKey = 'live_console_selected_' . (int) $store['id'];
 
         if ($action === 'select_product') {
             $productId = (int) ($_POST['product_id'] ?? 0);
             if ($productId <= 0) {
+                if ($expectsJson) {
+                    jsonResponse(['ok' => false, 'error' => 'Selecciona un producto válido.'], 422);
+                    return;
+                }
                 setFlash('error', 'Selecciona un producto válido.');
                 redirectTo('/app/live');
             }
 
             $_SESSION[$sessionKey] = $productId;
+            if ($expectsJson) {
+                jsonResponse([
+                    'ok' => true,
+                    'message' => 'Producto cargado en lanzamiento activo.',
+                    'state' => $this->buildLiveConsoleState((int) $store['id'], $query),
+                ]);
+                return;
+            }
             setFlash('success', 'Producto cargado en lanzamiento activo.');
             redirectTo('/app/live');
         }
@@ -400,12 +485,20 @@ final class App
         if ($action === 'launch_product') {
             $selectedProductId = isset($_SESSION[$sessionKey]) ? (int) $_SESSION[$sessionKey] : 0;
             if ($selectedProductId <= 0) {
+                if ($expectsJson) {
+                    jsonResponse(['ok' => false, 'error' => 'Selecciona un producto antes de poner en vivo.'], 422);
+                    return;
+                }
                 setFlash('error', 'Selecciona un producto antes de poner en vivo.');
                 redirectTo('/app/live');
             }
 
             $product = $this->findInventoryParentByProductId((int) $store['id'], $selectedProductId);
             if (!$product) {
+                if ($expectsJson) {
+                    jsonResponse(['ok' => false, 'error' => 'El producto seleccionado no existe en inventario.'], 404);
+                    return;
+                }
                 setFlash('error', 'El producto seleccionado no existe en inventario.');
                 redirectTo('/app/live');
             }
@@ -448,48 +541,106 @@ final class App
 
             unset($_SESSION[$sessionKey]);
 
+            if ($expectsJson) {
+                jsonResponse([
+                    'ok' => true,
+                    'message' => 'Producto enviado al vivo correctamente.',
+                    'state' => $this->buildLiveConsoleState((int) $store['id'], $query),
+                ]);
+                return;
+            }
             setFlash('success', 'Producto enviado al vivo correctamente.');
             redirectTo('/app/live');
         }
 
         if ($action === 'clear_selected') {
             unset($_SESSION[$sessionKey]);
+            if ($expectsJson) {
+                jsonResponse([
+                    'ok' => true,
+                    'message' => 'Lanzamiento activo limpiado.',
+                    'state' => $this->buildLiveConsoleState((int) $store['id'], $query),
+                ]);
+                return;
+            }
             setFlash('success', 'Lanzamiento activo limpiado.');
             redirectTo('/app/live');
         }
 
+        if ($action === 'clear_emission_queue') {
+            $this->clearEmissionQueue((int) $store['id']);
+            if ($expectsJson) {
+                jsonResponse([
+                    'ok' => true,
+                    'message' => 'Historial del vivo borrado.',
+                    'state' => $this->buildLiveConsoleState((int) $store['id'], $query),
+                ]);
+                return;
+            }
+            setFlash('success', 'Historial del vivo borrado.');
+            redirectTo('/app/live');
+        }
+
+        if ($expectsJson) {
+            jsonResponse(['ok' => false, 'error' => 'Acción inválida.'], 422);
+            return;
+        }
         setFlash('error', 'Acción inválida.');
         redirectTo('/app/live');
     }
 
+    /**
+     * Renders the live console or returns its JSON state.
+     */
     private function renderLiveConsole(int $userId): void
     {
+        $expectsJson = $this->expectsJsonRequest();
         $store = $this->findStoreByUserId($userId);
         if (!$store) {
+            if ($expectsJson) {
+                jsonResponse(['ok' => false, 'error' => 'Primero configura la conexión de tienda.'], 422);
+                return;
+            }
             setFlash('error', 'Primero configura la conexión de tienda.');
             redirectTo('/app/store-connection');
         }
 
-        $liveSession = $this->findLiveSession((int) $store['id']);
-        $query = trim((string) ($_GET['q'] ?? ''));
-        $catalog = $this->findInventoryParents((int) $store['id'], $query);
-
-        $sessionKey = 'live_console_selected_' . (int) $store['id'];
-        $selectedProductId = isset($_SESSION[$sessionKey]) ? (int) $_SESSION[$sessionKey] : 0;
-        $selectedProduct = $selectedProductId > 0
-            ? $this->findInventoryParentByProductId((int) $store['id'], $selectedProductId)
-            : null;
-        $emissionQueue = $this->getEmissionQueue((int) $store['id']);
+        $query = $this->currentLiveConsoleQuery();
+        $liveState = $this->buildLiveConsoleState((int) $store['id'], $query);
+        if ($expectsJson) {
+            jsonResponse(['ok' => true, 'state' => $liveState]);
+            return;
+        }
 
         $flash = pullFlash();
         $activeNav = 'onair';
         $title = 'En Vivo | LivePro';
+        $liveStateJson = json_encode(
+            $liveState,
+            JSON_UNESCAPED_UNICODE
+            | JSON_UNESCAPED_SLASHES
+            | JSON_HEX_TAG
+            | JSON_HEX_AMP
+            | JSON_HEX_APOS
+            | JSON_HEX_QUOT
+        ) ?: '{}';
         include __DIR__ . '/../views/app-live-console.php';
     }
 
+    /**
+     * Starts a regular inventory synchronization.
+     */
     private function startInventorySync(int $userId): void
     {
-        $expectsJson = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+        $this->beginInventorySyncForUser($userId);
+    }
+
+    /**
+     * Boots the inventory sync flow for the current store and response type.
+     */
+    private function beginInventorySyncForUser(int $userId): void
+    {
+        $expectsJson = $this->expectsJsonRequest();
         $store = $this->findStoreByUserId($userId);
         if (!$store) {
             if ($expectsJson) {
@@ -503,32 +654,28 @@ final class App
         try {
             $job = $this->getLatestSyncJob((int) $store['id']);
             if ($job && (string) $job['status'] === 'running') {
+                $message = 'La sincronización ya está en curso.';
                 if ($expectsJson) {
-                    jsonResponse(['ok' => true, 'status' => 'running', 'message' => 'Ya en curso']);
+                    jsonResponse(['ok' => true, 'status' => 'running', 'message' => $message]);
                     return;
                 }
-                setFlash('success', 'La sincronización ya está en curso.');
-                redirectTo('/app/inventory');
+                setFlash('success', $message);
+                redirectTo('/app/inventory' . $this->currentInventoryQueryString());
             }
 
-            $token = bin2hex(random_bytes(10));
-            $stmt = $this->db->prepare(
-                'INSERT INTO sync_jobs (store_id, status, sync_token, current_page, inserted_count, processed_products, message)
-                 VALUES (:store_id, :status, :sync_token, :current_page, 0, 0, :message)'
-            );
-            $stmt->execute([
-                ':store_id' => (int) $store['id'],
-                ':status' => 'running',
-                ':sync_token' => $token,
-                ':current_page' => 1,
-                ':message' => 'Iniciando sincronización por lotes...',
-            ]);
+            $createdJob = $this->createInventorySyncJob((int) $store['id']);
+            $startedMessage = 'Sincronización iniciada en segundo plano.';
 
             if ($expectsJson) {
-                jsonResponse(['ok' => true, 'status' => 'running', 'message' => 'Sincronización iniciada']);
+                jsonResponse([
+                    'ok' => true,
+                    'status' => 'running',
+                    'job_type' => (string) $createdJob['job_type'],
+                    'message' => $startedMessage,
+                ]);
                 return;
             }
-            setFlash('success', 'Sincronización iniciada en segundo plano.');
+            setFlash('success', $startedMessage);
         } catch (Throwable $error) {
             if ($expectsJson) {
                 jsonResponse(['ok' => false, 'error' => $error->getMessage()], 500);
@@ -537,64 +684,137 @@ final class App
             setFlash('error', 'No se pudo iniciar sincronización: ' . $error->getMessage());
         }
 
-        redirectTo('/app/inventory');
+        redirectTo('/app/inventory' . $this->currentInventoryQueryString());
     }
 
+    /**
+     * Deletes the local inventory and resets the sync status to idle.
+     */
+    private function clearInventory(int $userId): void
+    {
+        $expectsJson = $this->expectsJsonRequest();
+        $store = $this->findStoreByUserId($userId);
+        if (!$store) {
+            if ($expectsJson) {
+                jsonResponse(['ok' => false, 'error' => 'Primero configura la conexión de tienda.'], 422);
+                return;
+            }
+            setFlash('error', 'Primero configura la conexión de tienda.');
+            redirectTo('/app/store-connection');
+        }
+
+        try {
+            $job = $this->getLatestSyncJob((int) $store['id']);
+            if ($job && (string) $job['status'] === 'running') {
+                $message = 'No puedes borrar el inventario mientras hay una sincronización en curso.';
+                if ($expectsJson) {
+                    jsonResponse(['ok' => false, 'error' => $message], 422);
+                    return;
+                }
+                setFlash('error', $message);
+                redirectTo('/app/inventory' . $this->currentInventoryQueryString());
+            }
+
+            $this->clearInventoryData((int) $store['id']);
+
+            if ($expectsJson) {
+                jsonResponse([
+                    'ok' => true,
+                    'status' => 'idle',
+                    'message' => 'Inventario borrado.',
+                ]);
+                return;
+            }
+
+            setFlash('success', 'Inventario borrado.');
+        } catch (Throwable $error) {
+            if ($expectsJson) {
+                jsonResponse(['ok' => false, 'error' => $error->getMessage()], 500);
+                return;
+            }
+            setFlash('error', 'No se pudo borrar el inventario: ' . $error->getMessage());
+        }
+
+        redirectTo('/app/inventory' . $this->currentInventoryQueryString());
+    }
+
+    /**
+     * Removes local inventory and sync-job state for the given store.
+     */
+    private function clearInventoryData(int $storeId): void
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $stmt = $this->db->prepare(
+                'DELETE FROM inventory_items
+                 WHERE store_id = :store_id'
+            );
+            $stmt->execute([':store_id' => $storeId]);
+
+            $stmt = $this->db->prepare(
+                'DELETE FROM sync_jobs
+                 WHERE store_id = :store_id'
+            );
+            $stmt->execute([':store_id' => $storeId]);
+
+            $this->db->commit();
+        } catch (Throwable $error) {
+            $this->db->rollBack();
+            throw $error;
+        }
+    }
+
+    /**
+     * Creates a sync job record for a full inventory import.
+     */
+    private function createInventorySyncJob(int $storeId): array
+    {
+        $token = bin2hex(random_bytes(10));
+        $jobType = 'sync_full';
+        $message = 'Iniciando sincronización por lotes...';
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO sync_jobs (store_id, status, job_type, sync_token, current_page, inserted_count, processed_products, total_products, total_pages, message)
+             VALUES (:store_id, :status, :job_type, :sync_token, :current_page, 0, 0, 0, 0, :message)'
+        );
+        $stmt->execute([
+            ':store_id' => $storeId,
+            ':status' => 'running',
+            ':job_type' => $jobType,
+            ':sync_token' => $token,
+            ':current_page' => 1,
+            ':message' => $message,
+        ]);
+
+        return [
+            'id' => (int) $this->db->lastInsertId(),
+            'job_type' => $jobType,
+            'sync_token' => $token,
+        ];
+    }
+
+    /**
+     * Renders the inventory screen using server-side pagination.
+     */
     private function renderInventory(int $userId): void
     {
         $store = $this->findStoreByUserId($userId);
         $inventory = [];
         $syncJob = null;
+        $syncProgress = null;
+        $inventoryPagination = $this->defaultInventoryPagination();
 
         if ($store) {
             $syncJob = $this->getLatestSyncJob((int) $store['id']);
-            $stmt = $this->db->prepare(
-                'SELECT * FROM inventory_items
-                 WHERE store_id = :store_id
-                 ORDER BY product_id ASC, variation_id ASC, product_name ASC
-                 LIMIT 800'
+            $syncProgress = $syncJob ? $this->buildSyncJobProgress($syncJob) : null;
+            $inventoryPage = $this->fetchInventoryPage(
+                (int) $store['id'],
+                $this->currentInventoryPage(),
+                $this->currentInventoryPerPage()
             );
-            $stmt->execute([':store_id' => (int) $store['id']]);
-            $rows = $stmt->fetchAll();
-
-            $grouped = [];
-            foreach ($rows as $row) {
-                $productId = (int) $row['product_id'];
-                $isVariation = !empty($row['variation_id']);
-
-                if (!isset($grouped[$productId])) {
-                    $grouped[$productId] = [
-                        'product' => null,
-                        'variations' => [],
-                    ];
-                }
-
-                if ($isVariation) {
-                    $grouped[$productId]['variations'][] = $row;
-                    continue;
-                }
-
-                $grouped[$productId]['product'] = $row;
-            }
-
-            foreach ($grouped as $productId => $item) {
-                if ($item['product'] === null && !empty($item['variations'])) {
-                    $first = $item['variations'][0];
-                    $item['product'] = [
-                        'product_id' => $productId,
-                        'variation_id' => null,
-                        'sku' => '',
-                        'product_name' => (string) ($first['parent_name'] ?? 'Producto variable'),
-                        'price' => '',
-                        'stock' => '',
-                        'image_url' => (string) ($first['image_url'] ?? ''),
-                    ];
-                }
-
-                if ($item['product'] !== null) {
-                    $inventory[] = $item;
-                }
-            }
+            $inventory = $inventoryPage['items'];
+            $inventoryPagination = $inventoryPage['pagination'];
         }
 
         $flash = pullFlash();
@@ -603,6 +823,294 @@ final class App
         include __DIR__ . '/../views/app-inventory.php';
     }
 
+    /**
+     * Builds the sync progress payload used by the inventory UI.
+     */
+    private function buildSyncJobProgress(array $job): array
+    {
+        $totalProducts = max(0, (int) ($job['total_products'] ?? 0));
+        $totalPages = max(0, (int) ($job['total_pages'] ?? 0));
+        $processedProducts = max(0, (int) ($job['processed_products'] ?? 0));
+        $pagesProcessed = max(0, (int) ($job['current_page'] ?? 1) - 1);
+
+        if ($totalProducts > 0) {
+            $processedProducts = min($processedProducts, $totalProducts);
+        }
+
+        if ($totalPages > 0) {
+            $pagesProcessed = min($pagesProcessed, $totalPages);
+        }
+
+        $progressPercent = $totalProducts > 0
+            ? min(100, (int) round(($processedProducts / $totalProducts) * 100))
+            : 0;
+
+        if ((string) ($job['status'] ?? '') === 'completed') {
+            if ($totalProducts > 0) {
+                $processedProducts = $totalProducts;
+                $progressPercent = 100;
+            }
+            if ($totalPages > 0) {
+                $pagesProcessed = $totalPages;
+            }
+        }
+
+        return [
+            'processed_products' => $processedProducts,
+            'total_products' => $totalProducts,
+            'pages_processed' => $pagesProcessed,
+            'total_pages' => $totalPages,
+            'progress_percent' => $progressPercent,
+            'status_text' => $this->formatSyncStatusText($job, [
+                'processed_products' => $processedProducts,
+                'total_products' => $totalProducts,
+                'pages_processed' => $pagesProcessed,
+                'total_pages' => $totalPages,
+                'progress_percent' => $progressPercent,
+            ]),
+        ];
+    }
+
+    /**
+     * Formats the sync status line shown in the inventory screen.
+     */
+    private function formatSyncStatusText(array $job, array $progress): string
+    {
+        $parts = [
+            'Estado: ' . (string) ($job['status'] ?? 'idle'),
+        ];
+
+        if ((int) ($progress['total_products'] ?? 0) > 0) {
+            $parts[] = 'Productos: ' . (int) ($progress['processed_products'] ?? 0) . '/' . (int) ($progress['total_products'] ?? 0);
+            $parts[] = 'Progreso: ' . (int) ($progress['progress_percent'] ?? 0) . '%';
+        } else {
+            $parts[] = 'Productos procesados: ' . (int) ($progress['processed_products'] ?? 0);
+        }
+
+        if ((int) ($progress['total_pages'] ?? 0) > 0) {
+            $parts[] = 'Páginas: ' . (int) ($progress['pages_processed'] ?? 0) . '/' . (int) ($progress['total_pages'] ?? 0);
+        }
+
+        $parts[] = 'Filas guardadas: ' . (int) ($job['inserted_count'] ?? 0);
+
+        $message = trim((string) ($job['message'] ?? ''));
+        if ($message !== '') {
+            $parts[] = $message;
+        }
+
+        return implode(' | ', $parts);
+    }
+
+    /**
+     * Returns the default pagination payload for an empty inventory screen.
+     */
+    private function defaultInventoryPagination(): array
+    {
+        return [
+            'page' => 1,
+            'per_page' => 25,
+            'per_page_query' => '25',
+            'total_products' => 0,
+            'total_pages' => 1,
+            'offset' => 0,
+        ];
+    }
+
+    /**
+     * Returns the requested inventory page number.
+     */
+    private function currentInventoryPage(): int
+    {
+        $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+        return max(1, $page);
+    }
+
+    /**
+     * Returns the requested inventory page size or null for all results.
+     */
+    private function currentInventoryPerPage(): ?int
+    {
+        $raw = strtolower(trim((string) ($_GET['per_page'] ?? '25')));
+        if ($raw === 'all' || $raw === 'todos') {
+            return null;
+        }
+
+        $value = (int) $raw;
+        if (!in_array($value, [25, 50, 100, 200], true)) {
+            return 25;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Builds the inventory query string for redirects and links.
+     */
+    private function currentInventoryQueryString(?int $page = null, ?string $perPage = null): string
+    {
+        $pageValue = $page ?? $this->currentInventoryPage();
+        $perPageValue = $perPage ?? $this->currentInventoryPerPageQuery();
+
+        return '?' . http_build_query([
+            'page' => max(1, $pageValue),
+            'per_page' => $perPageValue,
+        ]);
+    }
+
+    /**
+     * Returns the current page-size value in query-string form.
+     */
+    private function currentInventoryPerPageQuery(): string
+    {
+        $perPage = $this->currentInventoryPerPage();
+        return $perPage === null ? 'all' : (string) $perPage;
+    }
+
+    /**
+     * Loads one inventory page and its pagination metadata.
+     */
+    private function fetchInventoryPage(int $storeId, int $page, ?int $perPage): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(DISTINCT product_id)
+             FROM inventory_items
+             WHERE store_id = :store_id'
+        );
+        $stmt->execute([':store_id' => $storeId]);
+        $totalProducts = (int) $stmt->fetchColumn();
+
+        $pagination = [
+            'page' => 1,
+            'per_page' => $perPage,
+            'per_page_query' => $perPage === null ? 'all' : (string) $perPage,
+            'total_products' => $totalProducts,
+            'total_pages' => 1,
+            'offset' => 0,
+        ];
+
+        if ($totalProducts === 0) {
+            return [
+                'items' => [],
+                'pagination' => $pagination,
+            ];
+        }
+
+        $totalPages = $perPage === null ? 1 : max(1, (int) ceil($totalProducts / $perPage));
+        $page = min(max(1, $page), $totalPages);
+        $offset = $perPage === null ? 0 : (($page - 1) * $perPage);
+        $pagination['page'] = $page;
+        $pagination['total_pages'] = $totalPages;
+        $pagination['offset'] = $offset;
+
+        $productIdSql = 'SELECT DISTINCT product_id
+                         FROM inventory_items
+                         WHERE store_id = :store_id
+                         ORDER BY product_id ASC';
+        if ($perPage !== null) {
+            $productIdSql .= ' LIMIT ' . (int) $perPage . ' OFFSET ' . (int) $offset;
+        }
+
+        $stmt = $this->db->prepare($productIdSql);
+        $stmt->execute([':store_id' => $storeId]);
+        $productIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+
+        if (empty($productIds)) {
+            return [
+                'items' => [],
+                'pagination' => $pagination,
+            ];
+        }
+
+        $rows = $this->fetchInventoryRowsByProductIds($storeId, $productIds);
+
+        return [
+            'items' => $this->groupInventoryRows($rows),
+            'pagination' => $pagination,
+        ];
+    }
+
+    /**
+     * Fetches all inventory rows needed for the requested product groups.
+     */
+    private function fetchInventoryRowsByProductIds(int $storeId, array $productIds): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $params = [':store_id' => $storeId];
+        $placeholders = [];
+
+        foreach (array_values($productIds) as $index => $productId) {
+            $key = ':product_id_' . $index;
+            $placeholders[] = $key;
+            $params[$key] = (int) $productId;
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT *
+             FROM inventory_items
+             WHERE store_id = :store_id
+               AND product_id IN (' . implode(', ', $placeholders) . ')
+             ORDER BY product_id ASC, variation_id ASC, product_name ASC'
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Groups inventory rows under their parent product for rendering.
+     */
+    private function groupInventoryRows(array $rows): array
+    {
+        $grouped = [];
+        foreach ($rows as $row) {
+            $productId = (int) $row['product_id'];
+            $isVariation = !empty($row['variation_id']);
+
+            if (!isset($grouped[$productId])) {
+                $grouped[$productId] = [
+                    'product' => null,
+                    'variations' => [],
+                ];
+            }
+
+            if ($isVariation) {
+                $grouped[$productId]['variations'][] = $row;
+                continue;
+            }
+
+            $grouped[$productId]['product'] = $row;
+        }
+
+        $inventory = [];
+        foreach ($grouped as $productId => $item) {
+            if ($item['product'] === null && !empty($item['variations'])) {
+                $first = $item['variations'][0];
+                $item['product'] = [
+                    'product_id' => $productId,
+                    'variation_id' => null,
+                    'sku' => '',
+                    'product_name' => (string) ($first['parent_name'] ?? 'Producto variable'),
+                    'price' => '',
+                    'stock' => '',
+                    'image_url' => (string) ($first['image_url'] ?? ''),
+                ];
+            }
+
+            if ($item['product'] !== null) {
+                $inventory[] = $item;
+            }
+        }
+
+        return $inventory;
+    }
+
+    /**
+     * Executes the next batch of the active inventory synchronization job.
+     */
     private function runInventorySyncBatch(int $userId): void
     {
         header('Content-Type: application/json; charset=utf-8');
@@ -622,21 +1130,32 @@ final class App
         try {
             $currentPage = max(1, (int) $job['current_page']);
             $batch = $this->fetchWooProductsPage($store, $currentPage, 12);
+            $totalProducts = max((int) ($job['total_products'] ?? 0), (int) ($batch['total_products'] ?? 0));
+            $totalPages = max((int) ($job['total_pages'] ?? 0), (int) ($batch['total_pages'] ?? 0));
 
-            if (empty($batch)) {
+            if ((int) ($batch['product_count'] ?? 0) === 0) {
                 $this->finalizeInventorySync((int) $store['id'], (string) $job['sync_token']);
                 $this->updateSyncJob((int) $job['id'], [
                     'status' => 'completed',
+                    'total_products' => $totalProducts,
+                    'total_pages' => $totalPages,
                     'message' => 'Sincronización finalizada.',
                 ]);
 
                 $done = $this->getLatestSyncJob((int) $store['id']);
+                $progress = $done ? $this->buildSyncJobProgress($done) : null;
                 jsonResponse([
                     'ok' => true,
                     'status' => 'completed',
+                    'job_type' => (string) ($done['job_type'] ?? 'sync_full'),
                     'inserted_count' => (int) ($done['inserted_count'] ?? 0),
                     'processed_products' => (int) ($done['processed_products'] ?? 0),
-                    'message' => 'Sincronización finalizada.',
+                    'total_products' => (int) ($done['total_products'] ?? 0),
+                    'total_pages' => (int) ($done['total_pages'] ?? 0),
+                    'pages_processed' => (int) (($progress['pages_processed'] ?? 0)),
+                    'progress_percent' => (int) (($progress['progress_percent'] ?? 0)),
+                    'message' => (string) ($done['message'] ?? 'Sincronización finalizada.'),
+                    'status_text' => (string) (($progress['status_text'] ?? '')),
                 ]);
                 return;
             }
@@ -646,23 +1165,40 @@ final class App
                 (string) $job['sync_token'],
                 $batch['items']
             );
+            $nextInsertedCount = ((int) $job['inserted_count']) + $inserted;
+            $nextProcessedProducts = ((int) $job['processed_products']) + $batch['product_count'];
 
             $this->updateSyncJob((int) $job['id'], [
                 'current_page' => $currentPage + 1,
-                'inserted_count' => ((int) $job['inserted_count']) + $inserted,
-                'processed_products' => ((int) $job['processed_products']) + $batch['product_count'],
+                'inserted_count' => $nextInsertedCount,
+                'processed_products' => $nextProcessedProducts,
+                'total_products' => $totalProducts,
+                'total_pages' => $totalPages,
                 'message' => 'Página ' . $currentPage . ' procesada.',
             ]);
+
+            $job['current_page'] = $currentPage + 1;
+            $job['inserted_count'] = $nextInsertedCount;
+            $job['processed_products'] = $nextProcessedProducts;
+            $job['total_products'] = $totalProducts;
+            $job['total_pages'] = $totalPages;
+            $progress = $this->buildSyncJobProgress($job);
 
             jsonResponse([
                 'ok' => true,
                 'status' => 'running',
+                'job_type' => (string) ($job['job_type'] ?? 'sync_full'),
                 'current_page' => $currentPage + 1,
-                'inserted_count' => ((int) $job['inserted_count']) + $inserted,
-                'processed_products' => ((int) $job['processed_products']) + $batch['product_count'],
+                'inserted_count' => $nextInsertedCount,
+                'processed_products' => $nextProcessedProducts,
+                'total_products' => $totalProducts,
+                'total_pages' => $totalPages,
+                'pages_processed' => (int) $progress['pages_processed'],
+                'progress_percent' => (int) $progress['progress_percent'],
                 'batch_products' => $batch['product_count'],
                 'batch_rows' => $inserted,
                 'message' => 'Procesando...',
+                'status_text' => (string) $progress['status_text'],
             ]);
         } catch (Throwable $error) {
             $this->updateSyncJob((int) $job['id'], [
@@ -678,6 +1214,9 @@ final class App
         }
     }
 
+    /**
+     * Returns the current sync job status for the inventory screen.
+     */
     private function inventorySyncStatus(int $userId): void
     {
         $store = $this->findStoreByUserId($userId);
@@ -692,24 +1231,35 @@ final class App
             return;
         }
 
+        $progress = $this->buildSyncJobProgress($job);
         jsonResponse([
             'ok' => true,
             'status' => (string) $job['status'],
+            'job_type' => (string) ($job['job_type'] ?? 'sync_full'),
             'current_page' => (int) $job['current_page'],
             'inserted_count' => (int) $job['inserted_count'],
             'processed_products' => (int) $job['processed_products'],
+            'total_products' => (int) ($job['total_products'] ?? 0),
+            'total_pages' => (int) ($job['total_pages'] ?? 0),
+            'pages_processed' => (int) $progress['pages_processed'],
+            'progress_percent' => (int) $progress['progress_percent'],
             'message' => (string) $job['message'],
+            'status_text' => (string) $progress['status_text'],
             'updated_at' => (string) $job['updated_at'],
         ]);
     }
 
+    /**
+     * Fetches one page of WooCommerce products and flattens them into inventory rows.
+     */
     private function fetchWooProductsPage(array $store, int $page, int $perPage): array
     {
         $items = [];
         $productCount = 0;
 
         $path = '/wp-json/wc/v3/products?per_page=' . $perPage . '&page=' . $page . '&status=publish';
-        $decoded = $this->requestWooJson($store, $path);
+        $response = $this->requestWooJson($store, $path, true);
+        $decoded = $response['body'];
 
         foreach ($decoded as $product) {
             if (!is_array($product)) {
@@ -810,9 +1360,14 @@ final class App
         return [
             'items' => $items,
             'product_count' => $productCount,
+            'total_products' => (int) ($response['headers']['x-wp-total'] ?? 0),
+            'total_pages' => (int) ($response['headers']['x-wp-totalpages'] ?? 0),
         ];
     }
 
+    /**
+     * Determines whether a WooCommerce product or variation is currently in stock.
+     */
     private function isWooItemInStock(array $item): bool
     {
         if (isset($item['stock_quantity']) && $item['stock_quantity'] !== null) {
@@ -826,6 +1381,9 @@ final class App
         return (bool) ($item['in_stock'] ?? false);
     }
 
+    /**
+     * Fetches every variation for a variable WooCommerce product.
+     */
     private function fetchWooVariations(array $store, int $productId): array
     {
         $all = [];
@@ -855,15 +1413,30 @@ final class App
         return $all;
     }
 
-    private function requestWooJson(array $store, string $path): array
+    /**
+     * Performs an authenticated WooCommerce JSON request.
+     */
+    private function requestWooJson(array $store, string $path, bool $includeMeta = false): array
     {
         $url = rtrim((string) $store['site_url'], '/') . $path;
         $ch = curl_init($url);
+        $responseHeaders = [];
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 20,
             CURLOPT_USERPWD => (string) $store['api_key'] . ':' . (string) $store['api_secret'],
             CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+            CURLOPT_HEADERFUNCTION => static function ($curl, string $headerLine) use (&$responseHeaders): int {
+                $trimmed = trim($headerLine);
+                if ($trimmed === '' || !str_contains($trimmed, ':')) {
+                    return strlen($headerLine);
+                }
+
+                [$name, $value] = explode(':', $trimmed, 2);
+                $responseHeaders[strtolower(trim($name))] = trim($value);
+
+                return strlen($headerLine);
+            },
         ]);
 
         $raw = curl_exec($ch);
@@ -885,9 +1458,19 @@ final class App
             throw new RuntimeException($message);
         }
 
+        if ($includeMeta) {
+            return [
+                'body' => $decoded,
+                'headers' => $responseHeaders,
+            ];
+        }
+
         return $decoded;
     }
 
+    /**
+     * Replaces the current batch of inventory rows with the latest synced values.
+     */
     private function upsertInventoryBatch(int $storeId, string $syncToken, array $items): int
     {
         if (empty($items)) {
@@ -946,6 +1529,9 @@ final class App
         return $written;
     }
 
+    /**
+     * Removes stale inventory rows that were not seen in the latest sync token.
+     */
     private function finalizeInventorySync(int $storeId, string $syncToken): void
     {
         $stmt = $this->db->prepare(
@@ -959,6 +1545,9 @@ final class App
         ]);
     }
 
+    /**
+     * Returns the most recent sync job for the given store.
+     */
     private function getLatestSyncJob(int $storeId): ?array
     {
         $stmt = $this->db->prepare(
@@ -974,6 +1563,9 @@ final class App
         return $row ?: null;
     }
 
+    /**
+     * Updates a sync job with the provided field values.
+     */
     private function updateSyncJob(int $jobId, array $data): void
     {
         $parts = [];
@@ -990,6 +1582,9 @@ final class App
         $stmt->execute($params);
     }
 
+    /**
+     * Registers or updates a store connection from the public plugin endpoint.
+     */
     private function pluginConnect(): void
     {
         $body = parseJsonBody();
@@ -1063,6 +1658,9 @@ final class App
         ]);
     }
 
+    /**
+     * Returns the public live session payload consumed by the storefront widget.
+     */
     private function livePublic(int $storeId): void
     {
         $store = $this->findStoreById($storeId);
@@ -1103,6 +1701,9 @@ final class App
         ]);
     }
 
+    /**
+     * Creates a pending order intent from the storefront widget payload.
+     */
     private function createPendingOrder(): void
     {
         $body = parseJsonBody();
@@ -1166,6 +1767,9 @@ final class App
         }
     }
 
+    /**
+     * Persists a pending order intent and returns its identifier.
+     */
     private function insertIntentOrder(int $storeId, array $payload): int
     {
         $stmt = $this->db->prepare(
@@ -1216,6 +1820,9 @@ final class App
         return (int) $this->db->lastInsertId();
     }
 
+    /**
+     * Marks an intent order as created after WooCommerce accepts it.
+     */
     private function markIntentAsCreated(int $intentId, int $wooOrderId): void
     {
         $stmt = $this->db->prepare(
@@ -1233,6 +1840,9 @@ final class App
         ]);
     }
 
+    /**
+     * Marks an intent order as failed and stores the error summary.
+     */
     private function markIntentAsFailed(int $intentId, string $error): void
     {
         $stmt = $this->db->prepare(
@@ -1249,6 +1859,9 @@ final class App
         ]);
     }
 
+    /**
+     * Sends a pending-order payload to the WooCommerce integration endpoint.
+     */
     private function callWooOrderEndpoint(array $store, array $payload): array
     {
         $endpoint = rtrim((string) $store['site_url'], '/') . '/wp-json/livepro/v1/order-pending';
@@ -1297,6 +1910,9 @@ final class App
         return $decoded;
     }
 
+    /**
+     * Applies the CORS headers required by public API endpoints.
+     */
     private function setCors(): void
     {
         header('Access-Control-Allow-Origin: *');
@@ -1304,6 +1920,9 @@ final class App
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     }
 
+    /**
+     * Finds the latest store connected by the given user.
+     */
     private function findStoreByUserId(int $userId): ?array
     {
         $stmt = $this->db->prepare('SELECT * FROM stores WHERE user_id = :user_id ORDER BY id DESC LIMIT 1');
@@ -1313,6 +1932,9 @@ final class App
         return $store ?: null;
     }
 
+    /**
+     * Finds a store by its WooCommerce API key.
+     */
     private function findStoreByApiKey(string $apiKey): ?array
     {
         $stmt = $this->db->prepare('SELECT * FROM stores WHERE api_key = :api_key LIMIT 1');
@@ -1322,6 +1944,9 @@ final class App
         return $store ?: null;
     }
 
+    /**
+     * Finds a store by its primary identifier.
+     */
     private function findStoreById(int $id): ?array
     {
         $stmt = $this->db->prepare('SELECT * FROM stores WHERE id = :id LIMIT 1');
@@ -1331,6 +1956,9 @@ final class App
         return $store ?: null;
     }
 
+    /**
+     * Finds the live session record for a store.
+     */
     private function findLiveSession(int $storeId): ?array
     {
         $stmt = $this->db->prepare('SELECT * FROM live_sessions WHERE store_id = :store_id LIMIT 1');
@@ -1340,6 +1968,9 @@ final class App
         return $session ?: null;
     }
 
+    /**
+     * Finds parent inventory products for the live console catalog.
+     */
     private function findInventoryParents(int $storeId, string $query = ''): array
     {
         $sql = 'SELECT *
@@ -1362,6 +1993,9 @@ final class App
         return is_array($rows) ? $rows : [];
     }
 
+    /**
+     * Finds the parent inventory row for a specific WooCommerce product.
+     */
     private function findInventoryParentByProductId(int $storeId, int $productId): ?array
     {
         $stmt = $this->db->prepare(
@@ -1381,6 +2015,119 @@ final class App
         return $row ?: null;
     }
 
+    /**
+     * Returns the active search query used by the live console.
+     */
+    private function currentLiveConsoleQuery(): string
+    {
+        return trim((string) ($_POST['q'] ?? $_GET['q'] ?? ''));
+    }
+
+    /**
+     * Builds the complete live console state payload for the UI.
+     */
+    private function buildLiveConsoleState(int $storeId, string $query = ''): array
+    {
+        $query = trim($query);
+        $sessionKey = 'live_console_selected_' . $storeId;
+        $selectedProductId = isset($_SESSION[$sessionKey]) ? (int) $_SESSION[$sessionKey] : 0;
+        $selectedProduct = $selectedProductId > 0
+            ? $this->findInventoryParentByProductId($storeId, $selectedProductId)
+            : null;
+
+        return [
+            'query' => $query,
+            'selectedProductId' => $selectedProductId,
+            'selectedProduct' => $selectedProduct ? $this->serializeInventoryProduct($selectedProduct) : null,
+            'catalog' => $this->serializeCatalogItems($this->findInventoryParents($storeId, $query), $selectedProductId),
+            'emissionQueue' => $this->serializeEmissionQueue($this->getEmissionQueue($storeId)),
+            'liveSession' => $this->serializeLiveSession($this->findLiveSession($storeId)),
+        ];
+    }
+
+    /**
+     * Serializes catalog rows and marks the currently selected product.
+     */
+    private function serializeCatalogItems(array $rows, int $selectedProductId): array
+    {
+        $catalog = [];
+        foreach ($rows as $row) {
+            $item = $this->serializeInventoryProduct($row);
+            $item['selected'] = (int) $item['product_id'] === $selectedProductId;
+            $catalog[] = $item;
+        }
+
+        return $catalog;
+    }
+
+    /**
+     * Serializes a single inventory product for frontend consumption.
+     */
+    private function serializeInventoryProduct(array $row): array
+    {
+        return [
+            'product_id' => (int) ($row['product_id'] ?? 0),
+            'product_name' => (string) ($row['product_name'] ?? ''),
+            'image_url' => (string) ($row['image_url'] ?? ''),
+            'price' => (string) ($row['price'] ?? ''),
+            'formatted_price' => formatPrice((string) ($row['price'] ?? '')),
+        ];
+    }
+
+    /**
+     * Serializes the emission queue rows for the live console.
+     */
+    private function serializeEmissionQueue(array $rows): array
+    {
+        $queue = [];
+        foreach ($rows as $row) {
+            $queue[] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'product_id' => (int) ($row['product_id'] ?? 0),
+                'product_name' => (string) ($row['product_name'] ?? ''),
+                'image_url' => (string) ($row['image_url'] ?? ''),
+                'price' => (string) ($row['price'] ?? ''),
+                'formatted_price' => formatPrice((string) ($row['price'] ?? '')),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+            ];
+        }
+
+        return $queue;
+    }
+
+    /**
+     * Serializes the live session status for frontend consumption.
+     */
+    private function serializeLiveSession(?array $session): array
+    {
+        if (!$session) {
+            return [
+                'is_live' => false,
+                'youtube_video_id' => '',
+            ];
+        }
+
+        return [
+            'is_live' => !empty($session['is_live']),
+            'youtube_video_id' => (string) ($session['youtube_video_id'] ?? ''),
+        ];
+    }
+
+    /**
+     * Removes all queued live-emission history entries for the store.
+     */
+    private function clearEmissionQueue(int $storeId): void
+    {
+        $stmt = $this->db->prepare(
+            'DELETE FROM live_emission_queue
+             WHERE store_id = :store_id'
+        );
+        $stmt->execute([':store_id' => $storeId]);
+    }
+
+    /**
+     * Returns the latest launched products queued for the live console.
+     */
     private function getEmissionQueue(int $storeId): array
     {
         $stmt = $this->db->prepare(

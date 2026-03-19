@@ -7,7 +7,7 @@
   <?php $cssVersion = @filemtime(__DIR__ . '/../assets/app.css') ?: time(); ?>
   <link rel="stylesheet" href="/assets/app.css?v=<?= (int) $cssVersion ?>">
 </head>
-<body>
+<body class="app-body">
 <div class="app-shell">
   <aside class="sidebar">
     <div class="brand">LIVE<span>PRO</span></div>
