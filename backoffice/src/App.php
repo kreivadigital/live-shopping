@@ -55,6 +55,16 @@ final class App
             return;
         }
 
+        if ($method === 'POST' && preg_match('#^/api/v1/live/public/(\d+)/snapshot$#', $path, $matches)) {
+            $this->livePublicSnapshot((int) $matches[1]);
+            return;
+        }
+
+        if ($method === 'POST' && preg_match('#^/api/v1/live/public/(\d+)/delta$#', $path, $matches)) {
+            $this->livePublicDelta((int) $matches[1]);
+            return;
+        }
+
         if ($method === 'POST' && preg_match('#^/api/v1/live/public/(\d+)$#', $path, $matches)) {
             $this->livePublic((int) $matches[1]);
             return;
@@ -399,6 +409,7 @@ final class App
         $youtubeUrl = trim((string) ($_POST['youtube_url'] ?? ''));
         $action = (string) ($_POST['live_action'] ?? 'start');
         $isLive = $action === 'stop' ? 0 : 1;
+        $sessionKey = $isLive ? $this->generatePublicLiveSessionKey() : null;
 
         if ($youtubeUrl === '' && $isLive === 1) {
             setFlash('error', 'Ingresa la URL de YouTube antes de iniciar el live.');
@@ -410,6 +421,13 @@ final class App
              SET youtube_url = :youtube_url,
                  youtube_video_id = :video_id,
                  is_live = :is_live,
+                 public_session_key = COALESCE(:public_session_key, public_session_key),
+                 session_revision = :session_revision,
+                 active_product_id = :active_product_id,
+                 active_variation_id = :active_variation_id,
+                 active_product_name = :active_product_name,
+                 active_price = :active_price,
+                 active_image = :active_image,
                  updated_at = CURRENT_TIMESTAMP
              WHERE store_id = :store_id'
         );
@@ -418,6 +436,13 @@ final class App
             ':youtube_url' => $youtubeUrl,
             ':video_id' => extractYoutubeVideoId($youtubeUrl),
             ':is_live' => $isLive,
+            ':public_session_key' => $sessionKey,
+            ':session_revision' => $isLive ? 0 : (int) (($this->findLiveSession((int) $store['id'])['session_revision'] ?? 0)),
+            ':active_product_id' => null,
+            ':active_variation_id' => null,
+            ':active_product_name' => null,
+            ':active_price' => null,
+            ':active_image' => null,
             ':store_id' => (int) $store['id'],
         ]);
 
@@ -507,7 +532,11 @@ final class App
             if (!$live) {
                 $insert = $this->db->prepare('INSERT INTO live_sessions (store_id, is_live) VALUES (:store_id, 0)');
                 $insert->execute([':store_id' => (int) $store['id']]);
+                $live = $this->findLiveSession((int) $store['id']);
             }
+
+            $sessionKey = $this->ensurePublicLiveSessionKey((int) $store['id'], $live ?: null);
+            $revision = $this->bumpLiveSessionRevision((int) $store['id']);
 
             $stmt = $this->db->prepare(
                 'UPDATE live_sessions
@@ -528,12 +557,32 @@ final class App
             ]);
 
             $insertQueue = $this->db->prepare(
-                'INSERT INTO live_emission_queue (store_id, product_id, product_name, price, image_url)
-                 VALUES (:store_id, :product_id, :product_name, :price, :image_url)'
+                'INSERT INTO live_emission_queue (
+                    store_id,
+                    product_id,
+                    variation_id,
+                    session_key,
+                    event_revision,
+                    product_name,
+                    price,
+                    image_url
+                 ) VALUES (
+                    :store_id,
+                    :product_id,
+                    :variation_id,
+                    :session_key,
+                    :event_revision,
+                    :product_name,
+                    :price,
+                    :image_url
+                 )'
             );
             $insertQueue->execute([
                 ':store_id' => (int) $store['id'],
                 ':product_id' => (int) $product['product_id'],
+                ':variation_id' => null,
+                ':session_key' => $sessionKey,
+                ':event_revision' => $revision,
                 ':product_name' => (string) $product['product_name'],
                 ':price' => (string) $product['price'],
                 ':image_url' => (string) $product['image_url'],
@@ -1663,40 +1712,90 @@ final class App
      */
     private function livePublic(int $storeId): void
     {
+        $this->livePublicSnapshot($storeId);
+    }
+
+    /**
+     * Returns the public snapshot payload consumed when the widget boots.
+     */
+    private function livePublicSnapshot(int $storeId): void
+    {
         $store = $this->findStoreById($storeId);
         if (!$store) {
             jsonResponse(['error' => 'Store not found'], 404);
             return;
         }
 
-        $session = $this->findLiveSession($storeId);
-        if (!$session) {
+        jsonResponse($this->buildLivePublicSnapshotPayload($storeId));
+    }
+
+    /**
+     * Returns the incremental live changes emitted after the requested revision.
+     */
+    private function livePublicDelta(int $storeId): void
+    {
+        $store = $this->findStoreById($storeId);
+        if (!$store) {
+            jsonResponse(['error' => 'Store not found'], 404);
+            return;
+        }
+
+        $body = parseJsonBody();
+        $clientSessionKey = trim((string) ($body['live_session_key'] ?? ''));
+        $sinceRevision = max(0, (int) ($body['since_revision'] ?? 0));
+        $snapshot = $this->buildLivePublicSnapshotPayload($storeId);
+
+        if (empty($snapshot['is_live'])) {
             jsonResponse([
                 'is_live' => false,
                 'live_session_id' => null,
-                'youtube_video_id' => null,
-                'product' => null,
+                'live_session_key' => '',
+                'revision' => 0,
+                'active_item_key' => null,
+                'events' => [],
+                'reset' => ($clientSessionKey !== '' || $sinceRevision > 0),
+                'poll_interval_ms' => 5000,
             ]);
             return;
         }
 
-        $product = null;
-        if (!empty($session['active_product_id'])) {
-            $product = [
-                'product_id' => (int) $session['active_product_id'],
-                'variation_id' => $session['active_variation_id'] ? (int) $session['active_variation_id'] : null,
-                'name' => $session['active_product_name'],
-                'price' => $session['active_price'],
-                'image' => $session['active_image'],
-            ];
+        $currentSessionKey = (string) ($snapshot['live_session_key'] ?? '');
+        $currentRevision = (int) ($snapshot['revision'] ?? 0);
+
+        if ($clientSessionKey === '' || $clientSessionKey !== $currentSessionKey || $sinceRevision > $currentRevision) {
+            jsonResponse([
+                'is_live' => true,
+                'live_session_id' => $snapshot['live_session_id'],
+                'live_session_key' => $currentSessionKey,
+                'revision' => $currentRevision,
+                'active_item_key' => $snapshot['active_item_key'],
+                'youtube_url' => $snapshot['youtube_url'],
+                'youtube_video_id' => $snapshot['youtube_video_id'],
+                'events' => [],
+                'reset' => true,
+                'poll_interval_ms' => 5000,
+            ]);
+            return;
+        }
+
+        $events = [];
+        foreach (($snapshot['items'] ?? []) as $item) {
+            if ((int) ($item['last_revision'] ?? 0) > $sinceRevision) {
+                $events[] = $item;
+            }
         }
 
         jsonResponse([
-            'is_live' => (bool) $session['is_live'],
-            'live_session_id' => (int) $session['id'],
-            'youtube_url' => $session['youtube_url'],
-            'youtube_video_id' => $session['youtube_video_id'],
-            'product' => $product,
+            'is_live' => true,
+            'live_session_id' => $snapshot['live_session_id'],
+            'live_session_key' => $currentSessionKey,
+            'revision' => $currentRevision,
+            'active_item_key' => $snapshot['active_item_key'],
+            'youtube_url' => $snapshot['youtube_url'],
+            'youtube_video_id' => $snapshot['youtube_video_id'],
+            'product' => $snapshot['product'],
+            'events' => $events,
+            'reset' => false,
             'poll_interval_ms' => 5000,
         ]);
     }
@@ -2034,15 +2133,217 @@ final class App
         $selectedProduct = $selectedProductId > 0
             ? $this->findInventoryParentByProductId($storeId, $selectedProductId)
             : null;
+        $liveSession = $this->findLiveSession($storeId);
+        $publicSessionKey = trim((string) ($liveSession['public_session_key'] ?? ''));
 
         return [
             'query' => $query,
             'selectedProductId' => $selectedProductId,
             'selectedProduct' => $selectedProduct ? $this->serializeInventoryProduct($selectedProduct) : null,
             'catalog' => $this->serializeCatalogItems($this->findInventoryParents($storeId, $query), $selectedProductId),
-            'emissionQueue' => $this->serializeEmissionQueue($this->getEmissionQueue($storeId)),
-            'liveSession' => $this->serializeLiveSession($this->findLiveSession($storeId)),
+            'emissionQueue' => $this->serializeEmissionQueue($this->getEmissionQueue($storeId, $publicSessionKey)),
+            'liveSession' => $this->serializeLiveSession($liveSession),
         ];
+    }
+
+    /**
+     * Builds the complete public live snapshot used to bootstrap the widget.
+     */
+    private function buildLivePublicSnapshotPayload(int $storeId): array
+    {
+        $session = $this->findLiveSession($storeId);
+        if (!$session || empty($session['is_live'])) {
+            return [
+                'is_live' => false,
+                'live_session_id' => null,
+                'live_session_key' => '',
+                'revision' => 0,
+                'youtube_url' => null,
+                'youtube_video_id' => null,
+                'active_item_key' => null,
+                'product' => null,
+                'items' => [],
+                'poll_interval_ms' => 5000,
+            ];
+        }
+
+        $session = $this->hydratePublicLiveSession($storeId, $session);
+        $publicSessionKey = (string) ($session['public_session_key'] ?? '');
+        $revision = (int) ($session['session_revision'] ?? 0);
+        $activeProduct = $this->serializePublicLiveProduct($session, $revision);
+        $items = $this->buildPublicLiveItems($this->getEmissionQueue($storeId, $publicSessionKey));
+
+        if ($activeProduct) {
+            $items = $this->mergeActivePublicProductIntoItems($items, $activeProduct);
+        }
+
+        if (!$activeProduct && !empty($items)) {
+            $activeProduct = $items[count($items) - 1];
+        }
+
+        return [
+            'is_live' => true,
+            'live_session_id' => (int) $session['id'],
+            'live_session_key' => $publicSessionKey,
+            'revision' => $revision,
+            'youtube_url' => $session['youtube_url'],
+            'youtube_video_id' => $session['youtube_video_id'],
+            'active_item_key' => $activeProduct['key'] ?? null,
+            'product' => $activeProduct,
+            'items' => $items,
+            'poll_interval_ms' => 5000,
+        ];
+    }
+
+    /**
+     * Ensures the current live session has a public key before exposing it to the widget.
+     */
+    private function hydratePublicLiveSession(int $storeId, array $session): array
+    {
+        $publicSessionKey = trim((string) ($session['public_session_key'] ?? ''));
+        if ($publicSessionKey !== '') {
+            return $session;
+        }
+
+        $publicSessionKey = $this->generatePublicLiveSessionKey();
+        $stmt = $this->db->prepare(
+            'UPDATE live_sessions
+             SET public_session_key = :public_session_key,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE store_id = :store_id'
+        );
+        $stmt->execute([
+            ':public_session_key' => $publicSessionKey,
+            ':store_id' => $storeId,
+        ]);
+
+        $session['public_session_key'] = $publicSessionKey;
+        return $session;
+    }
+
+    /**
+     * Builds the public product payload for the currently active live item.
+     */
+    private function serializePublicLiveProduct(array $session, int $revision): ?array
+    {
+        $productId = (int) ($session['active_product_id'] ?? 0);
+        if ($productId <= 0) {
+            return null;
+        }
+
+        $variationId = !empty($session['active_variation_id']) ? (int) $session['active_variation_id'] : null;
+
+        return [
+            'key' => $this->buildPublicLiveItemKey($productId, $variationId),
+            'product_id' => $productId,
+            'variation_id' => $variationId,
+            'name' => (string) ($session['active_product_name'] ?? ''),
+            'price' => (string) ($session['active_price'] ?? ''),
+            'image' => (string) ($session['active_image'] ?? ''),
+            'times_emitted' => 1,
+            'last_revision' => $revision,
+            'last_emitted_at' => (string) ($session['updated_at'] ?? ''),
+        ];
+    }
+
+    /**
+     * Collapses raw queue rows into unique public live items ordered by latest emission.
+     */
+    private function buildPublicLiveItems(array $rows): array
+    {
+        $itemsByKey = [];
+
+        foreach ($rows as $row) {
+            $productId = (int) ($row['product_id'] ?? 0);
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $variationId = !empty($row['variation_id']) ? (int) $row['variation_id'] : null;
+            $key = $this->buildPublicLiveItemKey($productId, $variationId);
+            $lastRevision = max(
+                (int) ($row['event_revision'] ?? 0),
+                (int) ($row['id'] ?? 0)
+            );
+
+            if (!isset($itemsByKey[$key])) {
+                $itemsByKey[$key] = [
+                    'key' => $key,
+                    'product_id' => $productId,
+                    'variation_id' => $variationId,
+                    'name' => (string) ($row['product_name'] ?? ''),
+                    'price' => (string) ($row['price'] ?? ''),
+                    'image' => (string) ($row['image_url'] ?? ''),
+                    'times_emitted' => 0,
+                    'last_revision' => 0,
+                    'last_emitted_at' => '',
+                ];
+            }
+
+            $itemsByKey[$key]['times_emitted']++;
+
+            if ($lastRevision >= (int) $itemsByKey[$key]['last_revision']) {
+                $itemsByKey[$key]['name'] = (string) ($row['product_name'] ?? $itemsByKey[$key]['name']);
+                $itemsByKey[$key]['price'] = (string) ($row['price'] ?? $itemsByKey[$key]['price']);
+                $itemsByKey[$key]['image'] = (string) ($row['image_url'] ?? $itemsByKey[$key]['image']);
+                $itemsByKey[$key]['last_revision'] = $lastRevision;
+                $itemsByKey[$key]['last_emitted_at'] = (string) ($row['created_at'] ?? $itemsByKey[$key]['last_emitted_at']);
+            }
+        }
+
+        $items = array_values($itemsByKey);
+        usort(static function (array $left, array $right): int {
+            $leftRevision = (int) ($left['last_revision'] ?? 0);
+            $rightRevision = (int) ($right['last_revision'] ?? 0);
+            if ($leftRevision === $rightRevision) {
+                return strcmp((string) ($left['key'] ?? ''), (string) ($right['key'] ?? ''));
+            }
+
+            return $leftRevision <=> $rightRevision;
+        });
+
+        return $items;
+    }
+
+    /**
+     * Ensures the active live product is present in the public item list.
+     */
+    private function mergeActivePublicProductIntoItems(array $items, array $activeProduct): array
+    {
+        $merged = false;
+
+        foreach ($items as &$item) {
+            if (($item['key'] ?? '') !== ($activeProduct['key'] ?? '')) {
+                continue;
+            }
+
+            $item['name'] = (string) ($activeProduct['name'] ?? $item['name']);
+            $item['price'] = (string) ($activeProduct['price'] ?? $item['price']);
+            $item['image'] = (string) ($activeProduct['image'] ?? $item['image']);
+            $item['last_revision'] = max((int) ($item['last_revision'] ?? 0), (int) ($activeProduct['last_revision'] ?? 0));
+            $item['last_emitted_at'] = (string) ($activeProduct['last_emitted_at'] ?? $item['last_emitted_at']);
+            $merged = true;
+            break;
+        }
+        unset($item);
+
+        if (!$merged) {
+            $items[] = $activeProduct;
+        }
+
+        usort(static function (array $left, array $right): int {
+            return ((int) ($left['last_revision'] ?? 0)) <=> ((int) ($right['last_revision'] ?? 0));
+        });
+
+        return $items;
+    }
+
+    /**
+     * Builds a stable key for public live items.
+     */
+    private function buildPublicLiveItemKey(int $productId, ?int $variationId): string
+    {
+        return $productId . ':' . ($variationId ?: 0);
     }
 
     /**
@@ -2104,12 +2405,16 @@ final class App
             return [
                 'is_live' => false,
                 'youtube_video_id' => '',
+                'public_session_key' => '',
+                'session_revision' => 0,
             ];
         }
 
         return [
             'is_live' => !empty($session['is_live']),
             'youtube_video_id' => (string) ($session['youtube_video_id'] ?? ''),
+            'public_session_key' => (string) ($session['public_session_key'] ?? ''),
+            'session_revision' => (int) ($session['session_revision'] ?? 0),
         ];
     }
 
@@ -2118,6 +2423,34 @@ final class App
      */
     private function clearEmissionQueue(int $storeId): void
     {
+        $session = $this->findLiveSession($storeId);
+        $publicSessionKey = trim((string) ($session['public_session_key'] ?? ''));
+
+        if ($publicSessionKey !== '') {
+            $stmt = $this->db->prepare(
+                'DELETE FROM live_emission_queue
+                 WHERE store_id = :store_id
+                   AND session_key = :session_key'
+            );
+            $stmt->execute([
+                ':store_id' => $storeId,
+                ':session_key' => $publicSessionKey,
+            ]);
+
+            $resetStmt = $this->db->prepare(
+                'UPDATE live_sessions
+                 SET public_session_key = :public_session_key,
+                     session_revision = 0,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE store_id = :store_id'
+            );
+            $resetStmt->execute([
+                ':public_session_key' => $this->generatePublicLiveSessionKey(),
+                ':store_id' => $storeId,
+            ]);
+            return;
+        }
+
         $stmt = $this->db->prepare(
             'DELETE FROM live_emission_queue
              WHERE store_id = :store_id'
@@ -2128,18 +2461,75 @@ final class App
     /**
      * Returns the latest launched products queued for the live console.
      */
-    private function getEmissionQueue(int $storeId): array
+    private function getEmissionQueue(int $storeId, string $publicSessionKey = ''): array
     {
-        $stmt = $this->db->prepare(
-            'SELECT *
-             FROM live_emission_queue
-             WHERE store_id = :store_id
-             ORDER BY id DESC
-             LIMIT 100'
-        );
-        $stmt->execute([':store_id' => $storeId]);
+        $sql = 'SELECT *
+                FROM live_emission_queue
+                WHERE store_id = :store_id';
+        $params = [':store_id' => $storeId];
+
+        if ($publicSessionKey !== '') {
+            $sql .= ' AND session_key = :session_key';
+            $params[':session_key'] = $publicSessionKey;
+        }
+
+        $sql .= ' ORDER BY event_revision DESC, id DESC LIMIT 100';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
         $rows = $stmt->fetchAll();
 
         return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Ensures the store has an active public live session key before emitting events.
+     */
+    private function ensurePublicLiveSessionKey(int $storeId, ?array $session = null): string
+    {
+        $session = $session ?: $this->findLiveSession($storeId);
+        $publicSessionKey = trim((string) ($session['public_session_key'] ?? ''));
+        if ($publicSessionKey !== '') {
+            return $publicSessionKey;
+        }
+
+        $publicSessionKey = $this->generatePublicLiveSessionKey();
+        $stmt = $this->db->prepare(
+            'UPDATE live_sessions
+             SET public_session_key = :public_session_key,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE store_id = :store_id'
+        );
+        $stmt->execute([
+            ':public_session_key' => $publicSessionKey,
+            ':store_id' => $storeId,
+        ]);
+
+        return $publicSessionKey;
+    }
+
+    /**
+     * Increments the public live revision after a visible emission event.
+     */
+    private function bumpLiveSessionRevision(int $storeId): int
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE live_sessions
+             SET session_revision = session_revision + 1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE store_id = :store_id'
+        );
+        $stmt->execute([':store_id' => $storeId]);
+
+        $session = $this->findLiveSession($storeId);
+        return (int) ($session['session_revision'] ?? 0);
+    }
+
+    /**
+     * Generates a unique public identifier for a live run.
+     */
+    private function generatePublicLiveSessionKey(): string
+    {
+        return 'live_' . bin2hex(random_bytes(12));
     }
 }

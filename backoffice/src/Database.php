@@ -23,10 +23,18 @@ final class Database
         self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-        if ($driver === 'mysql') {
-            self::migrateMysql(self::$pdo);
-        } else {
-            self::migrateSqlite(self::$pdo);
+        try {
+            if ($driver === 'mysql') {
+                self::migrateMysql(self::$pdo);
+            } else {
+                self::migrateSqlite(self::$pdo);
+            }
+        } catch (Throwable $error) {
+            if (!self::canBypassMigrationFailure(self::$pdo, $driver)) {
+                throw $error;
+            }
+
+            error_log('[LivePro] Database migration warning: ' . $error->getMessage());
         }
 
         return self::$pdo;
@@ -110,6 +118,8 @@ final class Database
                 youtube_url TEXT,
                 youtube_video_id TEXT,
                 is_live INTEGER NOT NULL DEFAULT 0,
+                public_session_key TEXT,
+                session_revision INTEGER NOT NULL DEFAULT 0,
                 active_product_id INTEGER,
                 active_variation_id INTEGER,
                 active_product_name TEXT,
@@ -119,12 +129,17 @@ final class Database
                 FOREIGN KEY (store_id) REFERENCES stores(id)
             )'
         );
+        self::ensureColumnSqlite($pdo, 'live_sessions', 'public_session_key', 'TEXT');
+        self::ensureColumnSqlite($pdo, 'live_sessions', 'session_revision', 'INTEGER NOT NULL DEFAULT 0');
 
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS live_emission_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 store_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
+                variation_id INTEGER,
+                session_key TEXT,
+                event_revision INTEGER NOT NULL DEFAULT 0,
                 product_name TEXT NOT NULL,
                 price TEXT,
                 image_url TEXT,
@@ -132,6 +147,9 @@ final class Database
                 FOREIGN KEY (store_id) REFERENCES stores(id)
             )'
         );
+        self::ensureColumnSqlite($pdo, 'live_emission_queue', 'variation_id', 'INTEGER');
+        self::ensureColumnSqlite($pdo, 'live_emission_queue', 'session_key', 'TEXT');
+        self::ensureColumnSqlite($pdo, 'live_emission_queue', 'event_revision', 'INTEGER NOT NULL DEFAULT 0');
 
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS inventory_items (
@@ -243,6 +261,8 @@ final class Database
                 youtube_url TEXT NULL,
                 youtube_video_id VARCHAR(100) NULL,
                 is_live TINYINT(1) NOT NULL DEFAULT 0,
+                public_session_key VARCHAR(80) NULL,
+                session_revision INT UNSIGNED NOT NULL DEFAULT 0,
                 active_product_id INT UNSIGNED NULL,
                 active_variation_id INT UNSIGNED NULL,
                 active_product_name VARCHAR(255) NULL,
@@ -253,12 +273,17 @@ final class Database
                 CONSTRAINT fk_live_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        self::ensureColumnMysql($pdo, 'live_sessions', 'public_session_key', 'VARCHAR(80) NULL');
+        self::ensureColumnMysql($pdo, 'live_sessions', 'session_revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
 
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS live_emission_queue (
                 id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 store_id INT UNSIGNED NOT NULL,
                 product_id INT UNSIGNED NOT NULL,
+                variation_id INT UNSIGNED NULL,
+                session_key VARCHAR(80) NULL,
+                event_revision INT UNSIGNED NOT NULL DEFAULT 0,
                 product_name VARCHAR(255) NOT NULL,
                 price VARCHAR(100) NULL,
                 image_url TEXT NULL,
@@ -267,6 +292,9 @@ final class Database
                 CONSTRAINT fk_queue_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        self::ensureColumnMysql($pdo, 'live_emission_queue', 'variation_id', 'INT UNSIGNED NULL');
+        self::ensureColumnMysql($pdo, 'live_emission_queue', 'session_key', 'VARCHAR(80) NULL');
+        self::ensureColumnMysql($pdo, 'live_emission_queue', 'event_revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
 
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS inventory_items (
@@ -379,5 +407,58 @@ final class Database
         }
 
         $pdo->exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
+    }
+
+    /**
+     * Determines whether the app can continue after a migration failure.
+     */
+    private static function canBypassMigrationFailure(PDO $pdo, string $driver): bool
+    {
+        $requiredTables = [
+            'users',
+            'stores',
+            'live_sessions',
+            'live_emission_queue',
+            'inventory_items',
+            'intent_orders',
+            'sync_jobs',
+        ];
+
+        foreach ($requiredTables as $table) {
+            if (!self::tableExists($pdo, $table, $driver)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Checks whether a table already exists for the current driver.
+     */
+    private static function tableExists(PDO $pdo, string $table, string $driver): bool
+    {
+        if ($driver === 'mysql') {
+            $stmt = $pdo->prepare(
+                'SELECT 1
+                 FROM information_schema.tables
+                 WHERE table_schema = DATABASE()
+                   AND table_name = :table_name
+                 LIMIT 1'
+            );
+            $stmt->execute([':table_name' => $table]);
+            return (bool) $stmt->fetchColumn();
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT 1
+             FROM sqlite_master
+             WHERE type = 'table'
+               AND name = :table_name
+             LIMIT 1"
+        );
+        $stmt->execute([':table_name' => $table]);
+
+        return (bool) $stmt->fetchColumn();
     }
 }

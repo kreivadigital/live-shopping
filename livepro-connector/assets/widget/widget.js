@@ -23,6 +23,10 @@
     activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
     live: null,
+    liveItems: [],
+    liveRevision: 0,
+    liveSessionKey: '',
+    followLive: true,
     mountedVideoId: null,
     lastProductSignature: '',
     activeProductKey: '',
@@ -41,6 +45,10 @@
     if (!state.live || !state.live.is_live) {
       root.className = ''
       root.innerHTML = ''
+      state.liveItems = []
+      state.liveRevision = 0
+      state.liveSessionKey = ''
+      state.followLive = true
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
@@ -167,6 +175,56 @@
       productButton.dataset.bound = '1'
     }
 
+    const activeCard = root.querySelector('.livepro-product-dock__card--active')
+    if (activeCard && activeCard.dataset.bound !== '1') {
+      activeCard.addEventListener('click', (event) => {
+        if (event.target && event.target.closest('.livepro-product-dock__cta')) {
+          return
+        }
+
+        openProductSheet()
+      })
+      activeCard.dataset.bound = '1'
+    }
+
+    root.querySelectorAll('.livepro-product-dock__peek').forEach((peek) => {
+      if (peek.dataset.bound === '1') {
+        return
+      }
+
+      peek.addEventListener('click', () => {
+        setDisplayedProductByKey(String(peek.dataset.productKey || ''))
+      })
+      peek.dataset.bound = '1'
+    })
+
+    const dockTrack = root.querySelector('.livepro-product-dock__track')
+    if (dockTrack && dockTrack.dataset.bound !== '1') {
+      let touchStartX = 0
+
+      dockTrack.addEventListener('touchstart', (event) => {
+        touchStartX = Number(event.touches && event.touches[0] ? event.touches[0].clientX : 0)
+      }, { passive: true })
+
+      dockTrack.addEventListener('touchend', (event) => {
+        const touchEndX = Number(event.changedTouches && event.changedTouches[0] ? event.changedTouches[0].clientX : 0)
+        const diff = touchEndX - touchStartX
+
+        if (Math.abs(diff) < 36) {
+          return
+        }
+
+        if (diff < 0) {
+          moveDisplayedProduct(1)
+          return
+        }
+
+        moveDisplayedProduct(-1)
+      }, { passive: true })
+
+      dockTrack.dataset.bound = '1'
+    }
+
     const sheetCloseButton = root.querySelector('.livepro-product-sheet__close')
     if (sheetCloseButton && sheetCloseButton.dataset.bound !== '1') {
       sheetCloseButton.addEventListener('click', () => {
@@ -207,32 +265,67 @@
   }
 
   function renderProductDock(product) {
+    const dock = getDockViewModel(product)
+    if (!dock.current) {
+      return ''
+    }
+
     return `
-      <div class="livepro-product-dock">
-        <div class="livepro-product-dock__card">
+      <div class="livepro-product-dock livepro-product-dock--count-${dock.count} ${dock.hasPrev ? 'has-prev' : 'is-first'} ${dock.hasNext ? 'has-next' : 'is-last'}">
+        <div class="livepro-product-dock__track">
+          ${dock.prev ? renderProductDockPeek(dock.prev, 'prev') : ''}
+          <div class="livepro-product-dock__card livepro-product-dock__card--active" data-product-key="${escapeAttribute(dock.current.key)}">
+            <div class="livepro-product-dock__image-wrap">
+              <img class="livepro-product-dock__image" src="${escapeAttribute(dock.current.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
+            </div>
+
+            <div class="livepro-product-dock__body">
+              <div class="livepro-product-dock__meta">
+                <span class="livepro-product-dock__tag">DESTACADO</span>
+                <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
+                  ${renderStockIcon()}
+                  ${escapeHtml(dock.current.stockLabel)}
+                </span>
+              </div>
+
+              <p class="livepro-product-dock__title">${escapeHtml(dock.current.name)}</p>
+              <p class="livepro-product-dock__price">${escapeHtml(dock.current.price)}</p>
+
+              <button class="livepro-product-dock__cta" type="button">
+                ${renderChevronIcon()}
+                ${escapeHtml(widgetCfg.labels.productCta)}
+              </button>
+            </div>
+          </div>
+          ${dock.next ? renderProductDockPeek(dock.next, 'next') : ''}
+        </div>
+      </div>
+    `
+  }
+
+  function renderProductDockPeek(product, direction) {
+    return `
+      <button
+        class="livepro-product-dock__peek livepro-product-dock__peek--${escapeAttribute(direction)}"
+        type="button"
+        data-product-key="${escapeAttribute(product.key)}"
+        aria-label="Ver ${escapeAttribute(product.name)}"
+      >
+        <div class="livepro-product-dock__card livepro-product-dock__card--peek">
           <div class="livepro-product-dock__image-wrap">
             <img class="livepro-product-dock__image" src="${escapeAttribute(product.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
           </div>
 
           <div class="livepro-product-dock__body">
             <div class="livepro-product-dock__meta">
-              <span class="livepro-product-dock__tag">DESTACADO</span>
-              <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
-                ${renderStockIcon()}
-                ${escapeHtml(product.stockLabel)}
-              </span>
+              <span class="livepro-product-dock__tag">${direction === 'prev' ? 'ANTERIOR' : 'SIGUIENTE'}</span>
             </div>
 
             <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
             <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
-
-            <button class="livepro-product-dock__cta" type="button">
-              ${renderChevronIcon()}
-              ${escapeHtml(widgetCfg.labels.productCta)}
-            </button>
           </div>
         </div>
-      </div>
+      </button>
     `
   }
 
@@ -351,19 +444,19 @@
       return
     }
 
-    const liveProduct = getLiveProductViewModel()
-    if (!liveProduct.key) {
+    const product = getDisplayedProductViewModel(getLiveProductViewModel())
+    if (!product.key) {
       return
     }
 
-    state.sheetProductSnapshot = cloneProductSnapshot(liveProduct.raw)
+    state.sheetProductSnapshot = cloneProductSnapshot(product.raw)
     state.productSheetClosing = false
     state.productSheetOpening = true
     state.productSheetOpen = true
 
-    syncProductState(liveProduct)
+    syncProductState(product)
 
-    if (!renderProductSheetInShell(liveProduct)) {
+    if (!renderProductSheetInShell(product)) {
       render()
       return
     }
@@ -476,14 +569,12 @@
       statusHost.innerHTML = renderStatusPills(viewers, 'panel')
     }
 
-    if (dockHost && productChanged) {
+    if (dockHost) {
       dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
     }
 
     if (sheetVisible) {
-      if (!existingSheet || productChanged) {
-        renderProductSheetInShell(product)
-      }
+      renderProductSheetInShell(product)
     } else if (existingSheet) {
       existingSheet.remove()
     }
@@ -495,13 +586,119 @@
   }
 
   function getLiveProductViewModel() {
-    const rawProduct = state.live && state.live.product ? state.live.product : {}
+    const rawProduct = getLiveActiveProduct()
     return getProductViewModel(getResolvedProductSource(rawProduct))
+  }
+
+  function getLiveItems() {
+    return Array.isArray(state.liveItems) ? state.liveItems : []
+  }
+
+  function getLiveActiveProductKey() {
+    const activeKey = state.live && state.live.active_item_key ? String(state.live.active_item_key) : ''
+    if (activeKey) {
+      return activeKey
+    }
+
+    const items = getLiveItems()
+    return items.length > 0 ? String(items[items.length - 1].key || '') : ''
+  }
+
+  function getLiveActiveProduct() {
+    return getLiveProductByKey(getLiveActiveProductKey())
+  }
+
+  function getDisplayedLiveProduct() {
+    const displayedKey = state.activeProductKey ? String(state.activeProductKey) : ''
+    if (displayedKey) {
+      const displayed = getLiveProductByKey(displayedKey)
+      if (displayed && displayed.key) {
+        return displayed
+      }
+    }
+
+    return getLiveActiveProduct()
+  }
+
+  function getLiveProductByKey(key) {
+    const safeKey = String(key || '')
+    if (!safeKey) {
+      return {}
+    }
+
+    return getLiveItems().find((item) => String(item && item.key ? item.key : '') === safeKey) || {}
+  }
+
+  function getDisplayedProductIndex() {
+    const items = getLiveItems()
+    const displayedKey = getDisplayedLiveProduct().key
+    if (!displayedKey) {
+      return -1
+    }
+
+    return items.findIndex((item) => String(item && item.key ? item.key : '') === String(displayedKey))
+  }
+
+  function getDockViewModel(currentProduct) {
+    const items = getLiveItems()
+    const currentIndex = getDisplayedProductIndex()
+
+    return {
+      count: items.length,
+      current: currentProduct && currentProduct.key ? currentProduct : null,
+      prev: currentIndex > 0 ? getProductViewModel(getResolvedProductSource(items[currentIndex - 1])) : null,
+      next: currentIndex >= 0 && currentIndex < items.length - 1 ? getProductViewModel(getResolvedProductSource(items[currentIndex + 1])) : null,
+      hasPrev: currentIndex > 0,
+      hasNext: currentIndex >= 0 && currentIndex < items.length - 1,
+    }
+  }
+
+  function setDisplayedProductByKey(key) {
+    const target = getLiveProductByKey(key)
+    if (!target || !target.key) {
+      return
+    }
+
+    state.activeProductKey = String(target.key)
+    state.followLive = state.activeProductKey === getLiveActiveProductKey()
+    state.activePhotoIndex = 0
+
+    if (state.productSheetOpen || state.productSheetClosing) {
+      state.sheetProductSnapshot = cloneProductSnapshot(getResolvedProductSource(target))
+    }
+
+    if (!updateExpandedShell()) {
+      render()
+    }
+  }
+
+  function moveDisplayedProduct(step) {
+    const items = getLiveItems()
+    if (items.length <= 1) {
+      return
+    }
+
+    const currentIndex = getDisplayedProductIndex()
+    if (currentIndex < 0) {
+      return
+    }
+
+    const nextIndex = clamp(currentIndex + step, 0, items.length - 1)
+    if (nextIndex === currentIndex) {
+      return
+    }
+
+    setDisplayedProductByKey(String(items[nextIndex] && items[nextIndex].key ? items[nextIndex].key : ''))
   }
 
   function getDisplayedProductViewModel(liveProduct) {
     if (state.sheetProductSnapshot && (state.productSheetOpen || state.productSheetClosing)) {
       return getProductViewModel(state.sheetProductSnapshot)
+    }
+
+    const displayedRawProduct = getDisplayedLiveProduct()
+    if (displayedRawProduct && displayedRawProduct.key) {
+      return getProductViewModel(getResolvedProductSource(displayedRawProduct))
     }
 
     return liveProduct || getLiveProductViewModel()
@@ -549,20 +746,23 @@
 
   async function pollLive() {
     try {
-      const response = await fetch(`${cfg.backofficeUrl.replace(/\/$/, '')}/api/v1/live/public/${storeId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
+      const prevVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
 
-      const body = await response.json()
-      if (!response.ok) {
-        throw new Error(body.error || 'No se pudo obtener estado live')
+      if (!state.liveSessionKey) {
+        const snapshot = await fetchLiveSnapshot()
+        applyLiveSnapshot(snapshot)
+      } else {
+        const delta = await fetchLiveDelta()
+        if (delta && delta.reset) {
+          const snapshot = await fetchLiveSnapshot()
+          applyLiveSnapshot(snapshot)
+        } else {
+          applyLiveDelta(delta)
+        }
       }
 
-      const prevVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
-      state.live = body
-      ensureProductFallback(body.product)
       const nextVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
+      ensureRelevantProductFallbacks()
 
       if (state.expanded && prevVideoId && nextVideoId && prevVideoId === nextVideoId && state.mountedVideoId === nextVideoId) {
         updateExpandedShell()
@@ -571,7 +771,173 @@
       }
     } catch (_error) {
       state.live = null
+      state.liveItems = []
+      state.liveRevision = 0
+      state.liveSessionKey = ''
+      state.followLive = true
       render()
+    }
+  }
+
+  async function fetchLiveSnapshot() {
+    const response = await fetch(`${cfg.backofficeUrl.replace(/\/$/, '')}/api/v1/live/public/${storeId}/snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    const body = await response.json()
+    if (!response.ok) {
+      throw new Error(body.error || 'No se pudo obtener snapshot live')
+    }
+
+    return body
+  }
+
+  async function fetchLiveDelta() {
+    const response = await fetch(`${cfg.backofficeUrl.replace(/\/$/, '')}/api/v1/live/public/${storeId}/delta`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        live_session_key: state.liveSessionKey,
+        since_revision: state.liveRevision,
+      }),
+    })
+
+    const body = await response.json()
+    if (!response.ok) {
+      throw new Error(body.error || 'No se pudo obtener delta live')
+    }
+
+    return body
+  }
+
+  function applyLiveSnapshot(snapshot) {
+    const normalized = normalizeLivePayload(snapshot)
+    const previousActiveKey = getLiveActiveProductKey()
+
+    state.live = normalized.live
+    state.liveItems = normalized.items
+    state.liveRevision = normalized.revision
+    state.liveSessionKey = normalized.sessionKey
+
+    if (!normalized.live.is_live) {
+      state.followLive = true
+      state.activeProductKey = ''
+      state.sheetProductSnapshot = null
+      return
+    }
+
+    const nextActiveKey = normalized.live.active_item_key || ''
+    const shouldFollow = state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey) || previousActiveKey !== nextActiveKey
+
+    if (shouldFollow) {
+      state.activeProductKey = nextActiveKey
+      state.followLive = true
+    }
+  }
+
+  function applyLiveDelta(delta) {
+    const normalized = normalizeLivePayload(delta)
+
+    if (!normalized.live.is_live) {
+      state.live = normalized.live
+      state.liveItems = []
+      state.liveRevision = 0
+      state.liveSessionKey = ''
+      state.followLive = true
+      state.activeProductKey = ''
+      state.sheetProductSnapshot = null
+      return
+    }
+
+    state.live = normalized.live
+    state.liveRevision = normalized.revision
+    state.liveSessionKey = normalized.sessionKey
+    state.liveItems = mergeLiveItems(state.liveItems, normalized.items)
+
+    const nextActiveKey = normalized.live.active_item_key || ''
+    if (state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey)) {
+      state.activeProductKey = nextActiveKey
+      state.followLive = true
+    }
+  }
+
+  function normalizeLivePayload(payload) {
+    const live = {
+      is_live: Boolean(payload && payload.is_live),
+      live_session_id: payload && payload.live_session_id ? Number(payload.live_session_id) : null,
+      active_item_key: payload && payload.active_item_key ? String(payload.active_item_key) : '',
+      youtube_url: payload && payload.youtube_url ? String(payload.youtube_url) : '',
+      youtube_video_id: payload && payload.youtube_video_id ? String(payload.youtube_video_id) : '',
+      poll_interval_ms: payload && payload.poll_interval_ms ? Number(payload.poll_interval_ms) : Number(cfg.pollMs || 5000),
+    }
+
+    const rawItems = Array.isArray(payload && payload.items) ? payload.items : (Array.isArray(payload && payload.events) ? payload.events : [])
+    const items = rawItems
+      .map(normalizeLiveItem)
+      .filter((item) => item && item.key)
+      .sort((left, right) => Number(left.last_revision || 0) - Number(right.last_revision || 0))
+
+    return {
+      live,
+      items,
+      revision: payload && payload.revision ? Number(payload.revision) : 0,
+      sessionKey: payload && payload.live_session_key ? String(payload.live_session_key) : '',
+    }
+  }
+
+  function normalizeLiveItem(item) {
+    if (!item || Number(item.product_id || 0) <= 0) {
+      return null
+    }
+
+    return {
+      key: String(item.key || `${Number(item.product_id || 0)}:${Number(item.variation_id || 0)}`),
+      product_id: Number(item.product_id || 0),
+      variation_id: Number(item.variation_id || 0) || null,
+      name: String(item.name || item.product_name || ''),
+      price: String(item.price || ''),
+      image: String(item.image || item.image_url || ''),
+      times_emitted: Math.max(1, Number(item.times_emitted || 1)),
+      last_revision: Number(item.last_revision || 0),
+      last_emitted_at: String(item.last_emitted_at || item.created_at || ''),
+    }
+  }
+
+  function mergeLiveItems(existingItems, incomingItems) {
+    const byKey = {}
+
+    ;(Array.isArray(existingItems) ? existingItems : []).forEach((item) => {
+      if (!item || !item.key) {
+        return
+      }
+
+      byKey[String(item.key)] = Object.assign({}, item)
+    })
+
+    ;(Array.isArray(incomingItems) ? incomingItems : []).forEach((item) => {
+      if (!item || !item.key) {
+        return
+      }
+
+      byKey[String(item.key)] = Object.assign({}, byKey[String(item.key)] || {}, item)
+    })
+
+    return Object.values(byKey).sort((left, right) => Number(left.last_revision || 0) - Number(right.last_revision || 0))
+  }
+
+  function hasLiveItem(key) {
+    return Boolean(getLiveProductByKey(key).key)
+  }
+
+  function ensureRelevantProductFallbacks() {
+    const liveProduct = getLiveActiveProduct()
+    const displayedProduct = getDisplayedLiveProduct()
+
+    ensureProductFallback(liveProduct)
+    if (displayedProduct && displayedProduct.key !== liveProduct.key) {
+      ensureProductFallback(displayedProduct)
     }
   }
 
@@ -658,11 +1024,11 @@
       ...(readAttributeValues(product.attributes, ['size', 'sizes', 'talle', 'talles', 'tamano', 'tamaño'])),
     ])
 
-    const key = [
+    const key = String(product.key || [
       String(product.product_id || ''),
       String(product.variation_id || ''),
       String(product.name || ''),
-    ].join('|')
+    ].join('|'))
 
     return {
       key: key === '||' ? '' : key,
