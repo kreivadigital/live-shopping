@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+/**
+ * Sends a JSON response with the provided HTTP status code.
+ */
 function jsonResponse(array $data, int $status = 200): void
 {
     http_response_code($status);
@@ -9,6 +12,9 @@ function jsonResponse(array $data, int $status = 200): void
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Parses the request body as JSON and returns an array payload.
+ */
 function parseJsonBody(): array
 {
     $raw = file_get_contents('php://input') ?: '';
@@ -20,22 +26,34 @@ function parseJsonBody(): array
     return is_array($decoded) ? $decoded : [];
 }
 
+/**
+ * Redirects the current request to another path and stops execution.
+ */
 function redirectTo(string $path): void
 {
     header('Location: ' . $path);
     exit;
 }
 
+/**
+ * Escapes a string for safe HTML output.
+ */
 function e(?string $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Stores a flash message in the session.
+ */
 function setFlash(string $type, string $message): void
 {
     $_SESSION['flash'] = ['type' => $type, 'message' => $message];
 }
 
+/**
+ * Returns the current flash message and removes it from the session.
+ */
 function pullFlash(): ?array
 {
     if (empty($_SESSION['flash']) || !is_array($_SESSION['flash'])) {
@@ -47,6 +65,30 @@ function pullFlash(): ?array
     return $flash;
 }
 
+/**
+ * Normalizes numeric prices to the UI currency format.
+ */
+function formatPrice(?string $value): string
+{
+    $price = trim((string) $value);
+    if ($price === '') {
+        return '';
+    }
+
+    if (preg_match('/^\$/', $price) === 1) {
+        return $price;
+    }
+
+    if (preg_match('/^-?\d[\d.,]*$/', $price) === 1) {
+        return '$' . $price;
+    }
+
+    return $price;
+}
+
+/**
+ * Extracts a YouTube video identifier from a supported URL.
+ */
 function extractYoutubeVideoId(?string $url): ?string
 {
     if (!$url) {
