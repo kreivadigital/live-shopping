@@ -2292,7 +2292,7 @@ final class App
         }
 
         $items = array_values($itemsByKey);
-        usort(static function (array $left, array $right): int {
+        usort($items, static function (array $left, array $right): int {
             $leftRevision = (int) ($left['last_revision'] ?? 0);
             $rightRevision = (int) ($right['last_revision'] ?? 0);
             if ($leftRevision === $rightRevision) {
@@ -2331,7 +2331,7 @@ final class App
             $items[] = $activeProduct;
         }
 
-        usort(static function (array $left, array $right): int {
+        usort($items, static function (array $left, array $right): int {
             return ((int) ($left['last_revision'] ?? 0)) <=> ((int) ($right['last_revision'] ?? 0));
         });
 
