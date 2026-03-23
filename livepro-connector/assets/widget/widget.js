@@ -790,31 +790,43 @@
       return
     }
 
+    const trackStyles = window.getComputedStyle(track)
+    const paddingLeft = Number.parseFloat(trackStyles.paddingLeft || '0') || 0
+    const paddingRight = Number.parseFloat(trackStyles.paddingRight || '0') || 0
+    const usableWidth = Math.max(0, viewportWidth - paddingLeft - paddingRight)
     const gap = viewportWidth <= 420 ? 8 : 10
-    const sidePeek = viewportWidth <= 420 ? 52 : 64
-    const cardWidth = Math.max(220, viewportWidth - (sidePeek * 2))
 
     viewport.style.setProperty('--livepro-dock-gap', `${gap}px`)
-    viewport.style.setProperty('--livepro-dock-side-peek', `${sidePeek}px`)
-    viewport.style.setProperty('--livepro-dock-card-width', `${cardWidth}px`)
 
     const activeSlide = targetSlide || track.querySelector(`.livepro-product-dock__slide[data-product-key="${escapeSelector(state.activeProductKey)}"]`) || track.querySelector('.livepro-product-dock__slide')
     if (!activeSlide) {
       return
     }
 
-    const trackWidth = track.scrollWidth
-    const slideWidth = activeSlide.offsetWidth
-    const maxTranslate = 0
-    const minTranslate = Math.min(0, viewportWidth - trackWidth)
     const activeIndex = Array.prototype.indexOf.call(track.children, activeSlide)
     const lastIndex = Math.max(0, track.children.length - 1)
+    const lastSlide = track.children[lastIndex] || activeSlide
+    const slideWidth = activeSlide.offsetWidth
+    const maxTranslate = 0
+    const lastSlideRight = lastSlide.offsetLeft + lastSlide.offsetWidth + paddingRight
+    const minTranslate = Math.min(0, viewportWidth - lastSlideRight)
 
-    let desiredLeft = 0
-    if (activeIndex > 0 && activeIndex < lastIndex) {
-      desiredLeft = Math.max(0, (viewportWidth - slideWidth) / 2)
-    } else if (activeIndex === lastIndex && lastIndex > 0) {
-      desiredLeft = Math.max(0, viewportWidth - slideWidth)
+    let desiredLeft = paddingLeft
+    if (activeIndex === lastIndex && lastIndex > 0) {
+      const desiredRight = viewportWidth - paddingRight
+      const activeRight = activeSlide.offsetLeft + slideWidth
+      const desiredTranslate = desiredRight - activeRight
+      track.style.transition = animate ? `transform ${TRANSITION_MS}ms ease` : 'none'
+      track.style.transform = `translate3d(${clamp(desiredTranslate, minTranslate, maxTranslate)}px, 0, 0)`
+
+      if (!animate) {
+        window.requestAnimationFrame(() => {
+          track.style.transition = ''
+        })
+      }
+      return
+    } else if (activeIndex > 0 && activeIndex < lastIndex) {
+      desiredLeft = paddingLeft + Math.max(0, (usableWidth - slideWidth) / 2)
     }
 
     const slideLeft = activeSlide.offsetLeft
