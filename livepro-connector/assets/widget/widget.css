@@ -744,6 +744,7 @@
   justify-content: center;
   min-width: 50px;
   min-height: 35px;
+  margin: 0;
   padding: 0 12px;
   border-radius: 14px;
   border: 1px solid #d6ddec;
@@ -752,6 +753,18 @@
   font-size: 12px;
   line-height: 1;
   font-weight: 800;
+}
+
+.livepro-info-token--option {
+  cursor: pointer;
+  appearance: none;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+
+.livepro-info-token--option.is-selected {
+  background: #23314f;
+  border-color: #23314f;
+  color: #fff;
 }
 
 .livepro-product-sheet__footer {

@@ -30,6 +30,7 @@ final class ProductDataResolver
         $variationAttributes = $variationProduct instanceof WC_Product_Variation
             ? $this->extractVariationAttributeGroups($variationProduct)
             : [];
+        $variationMatrix = $this->collectVariationMatrix($baseProduct, $gallery);
 
         $colors = $this->dedupeValues(array_merge(
             $this->matchAttributeValues($parentAttributes, ['color', 'colour', 'colores']),
@@ -46,12 +47,13 @@ final class ProductDataResolver
             'product_id' => $productId,
             'variation_id' => $variationId > 0 ? $variationId : null,
             'name' => $contextProduct->get_name(),
-            'price' => html_entity_decode(wp_strip_all_tags((string) $contextProduct->get_price_html()), ENT_QUOTES, 'UTF-8'),
+            'price' => $this->resolveDisplayPrice($contextProduct),
             'image' => $gallery[0] ?? '',
             'gallery' => $gallery,
             'colors' => $colors,
             'color_option_details' => $colorOptions,
             'sizes' => $sizes,
+            'variation_matrix' => $variationMatrix,
         ];
     }
 
@@ -69,7 +71,19 @@ final class ProductDataResolver
             }
         }
 
-        foreach ([$baseProduct, $variationProduct] as $product) {
+        $products = [$baseProduct];
+        if ($variationProduct instanceof WC_Product) {
+            $products[] = $variationProduct;
+        }
+
+        foreach ($baseProduct->get_children() as $childVariationId) {
+            $childProduct = wc_get_product((int) $childVariationId);
+            if ($childProduct instanceof WC_Product) {
+                $products[] = $childProduct;
+            }
+        }
+
+        foreach ($products as $product) {
             if (!$product instanceof WC_Product) {
                 continue;
             }
@@ -91,6 +105,64 @@ final class ProductDataResolver
         }
 
         return $this->dedupeValues($urls);
+    }
+
+    /**
+     * @param string[] $gallery
+     * @return array<int, array{
+     *   variation_id: int,
+     *   color: string,
+     *   size: string,
+     *   image: string,
+     *   price: string,
+     *   in_stock: bool,
+     *   purchasable: bool,
+     *   image_gallery_index: int
+     * }>
+     */
+    private function collectVariationMatrix(WC_Product $baseProduct, array $gallery): array
+    {
+        $matrix = [];
+
+        foreach ($baseProduct->get_children() as $variationId) {
+            $variation = wc_get_product((int) $variationId);
+            if (!$variation instanceof WC_Product_Variation) {
+                continue;
+            }
+
+            $variationAttributes = $this->extractVariationAttributeGroups($variation);
+            $matchedColors = $this->matchAttributeValues($variationAttributes, ['color', 'colour', 'colores']);
+            $matchedSizes = $this->matchAttributeValues($variationAttributes, ['size', 'sizes', 'talle', 'talles', 'tamano', 'tamaño']);
+
+            $color = isset($matchedColors[0]) ? (string) $matchedColors[0] : '';
+            $size = isset($matchedSizes[0]) ? (string) $matchedSizes[0] : '';
+
+            $image = '';
+            $imageId = $variation->get_image_id();
+            if ($imageId > 0) {
+                $image = (string) wp_get_attachment_image_url($imageId, 'large');
+            }
+
+            if ($image === '') {
+                $imageId = $baseProduct->get_image_id();
+                if ($imageId > 0) {
+                    $image = (string) wp_get_attachment_image_url($imageId, 'large');
+                }
+            }
+
+            $matrix[] = [
+                'variation_id' => (int) $variation->get_id(),
+                'color' => $color,
+                'size' => $size,
+                'image' => $image,
+                'price' => $this->resolveDisplayPrice($variation),
+                'in_stock' => $variation->is_in_stock(),
+                'purchasable' => $variation->is_purchasable(),
+                'image_gallery_index' => $this->findGalleryIndex($gallery, $image),
+            ];
+        }
+
+        return $matrix;
     }
 
     /**
@@ -285,10 +357,83 @@ final class ProductDataResolver
         return $unique;
     }
 
+    private function resolveDisplayPrice(WC_Product $product): string
+    {
+        $numericPrice = $this->resolveDisplayPriceAmount($product);
+        if ($numericPrice !== null) {
+            return $this->toPlainText((string) wc_price($numericPrice));
+        }
+
+        return $this->extractLastPriceToken((string) $product->get_price_html());
+    }
+
+    private function resolveDisplayPriceAmount(WC_Product $product): ?float
+    {
+        if ($product->is_type('variable')) {
+            $minVariationPrice = $product->get_variation_price('min', true);
+            if ($minVariationPrice !== '') {
+                return (float) $minVariationPrice;
+            }
+        }
+
+        $rawPrice = $product->get_price();
+        if ($rawPrice === '' || $rawPrice === null) {
+            return null;
+        }
+
+        return (float) wc_get_price_to_display($product);
+    }
+
+    private function extractLastPriceToken(string $priceHtml): string
+    {
+        $plain = $this->toPlainText($priceHtml);
+        if ($plain === '') {
+            return '';
+        }
+
+        $currencySymbol = function_exists('get_woocommerce_currency_symbol')
+            ? (string) get_woocommerce_currency_symbol()
+            : '$';
+        $pattern = '/' . preg_quote($currencySymbol, '/') . '\s*\d[\d.,]*/u';
+
+        if (preg_match_all($pattern, $plain, $matches) && !empty($matches[0])) {
+            return trim((string) end($matches[0]));
+        }
+
+        return $plain;
+    }
+
+    private function toPlainText(string $value): string
+    {
+        $plain = html_entity_decode(wp_strip_all_tags($value), ENT_QUOTES, 'UTF-8');
+        $plain = preg_replace('/\s+/u', ' ', $plain);
+
+        return is_string($plain) ? trim($plain) : '';
+    }
+
     private function normalizeKey(string $value): string
     {
         $normalized = remove_accents($value);
         $normalized = strtolower(trim($normalized));
         return preg_replace('/\s+/', '_', $normalized) ?? $normalized;
+    }
+
+    /**
+     * @param string[] $gallery
+     */
+    private function findGalleryIndex(array $gallery, string $image): int
+    {
+        $needle = trim($image);
+        if ($needle === '') {
+            return 0;
+        }
+
+        foreach ($gallery as $index => $candidate) {
+            if (trim((string) $candidate) === $needle) {
+                return (int) $index;
+            }
+        }
+
+        return 0;
     }
 }
