@@ -767,6 +767,15 @@
   color: #fff;
 }
 
+.livepro-info-token--option.is-disabled,
+.livepro-info-token--option:disabled {
+  background: #eef2f7;
+  border-color: #e0e6f0;
+  color: #a5afc1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .livepro-product-sheet__footer {
   flex: 0 0 auto;
   margin-top: 0;

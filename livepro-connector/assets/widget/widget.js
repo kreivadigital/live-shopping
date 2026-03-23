@@ -643,7 +643,8 @@
   }
 
   function renderVariationToken(group, option) {
-    const stateClass = option.selected ? ' is-selected' : ''
+    const stateClass = `${option.selected ? ' is-selected' : ''}${option.disabled ? ' is-disabled' : ''}`
+    const disabledAttribute = option.disabled ? ' disabled aria-disabled="true"' : ''
 
     return `
       <button
@@ -651,6 +652,7 @@
         type="button"
         data-group="${escapeAttribute(group)}"
         data-value="${escapeAttribute(option.label)}"
+        ${disabledAttribute}
       >
         ${escapeHtml(option.label)}
       </button>
@@ -764,16 +766,18 @@
     return {
       interactive: matrix.length > 0,
       colorOptions: colors
-        .filter((label) => hasAvailableColor(matrix, label, state.sheetSelectedSize))
+        .filter((label) => hasAvailableColor(matrix, label, ''))
         .map((label) => ({
           label,
           selected: isSameOption(label, state.sheetSelectedColor),
+          disabled: Boolean(state.sheetSelectedSize) && !hasAvailableColor(matrix, label, state.sheetSelectedSize),
         })),
       sizeOptions: sizes
-        .filter((label) => hasAvailableSize(matrix, label, state.sheetSelectedColor))
+        .filter((label) => hasAvailableSize(matrix, label, ''))
         .map((label) => ({
           label,
           selected: isSameOption(label, state.sheetSelectedSize),
+          disabled: Boolean(state.sheetSelectedColor) && !hasAvailableSize(matrix, label, state.sheetSelectedColor),
         })),
       exactVariation: findExactVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize),
       previewVariation: findPreviewVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize),
