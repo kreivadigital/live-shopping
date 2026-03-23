@@ -55,8 +55,8 @@ DB_CHARSET=utf8mb4
 
 3. Opción recomendada: apuntar dominio/subdominio a `backoffice/public`.
 4. Opción alternativa (sin cambiar document root): usar `backoffice/index.php` en la raíz de `backoffice`.
-5. Si usas la alternativa, asegúrate de subir también `backoffice/assets/app.css`.
-4. Abrir `https://livepro.kreivadigital.com/register` para crear el primer usuario.
+5. En ambos casos, la fuente de verdad de estilos es `backoffice/public/assets/app.css`.
+6. Abrir `https://livepro.kreivadigital.com/register` para crear el primer usuario.
 
 Notas:
 - Las tablas se crean automáticamente al primer request (migración simple embebida).

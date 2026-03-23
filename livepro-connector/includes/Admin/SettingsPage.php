@@ -300,7 +300,7 @@ final class SettingsPage
             [
                 'title' => 'Apariencia de producto',
                 'description' => 'Personaliza los colores del precio y del CTA del dock de producto.',
-                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color'],
+                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_tag_background_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color'],
             ],
             [
                 'title' => 'Layout del widget',
@@ -390,9 +390,14 @@ final class SettingsPage
                 'description' => 'Se aplica al precio del producto tanto en el dock como en el sheet.',
             ],
             'widget_product_tag_color' => [
-                'label' => 'Color destacado',
+                'label' => 'Texto badge destacado',
                 'type' => 'color',
-                'description' => 'Color del texto del tag livepro-product-dock__tag.',
+                'description' => 'Color del texto del badge superior del dock de producto.',
+            ],
+            'widget_product_tag_background_color' => [
+                'label' => 'Fondo badge destacado',
+                'type' => 'color',
+                'description' => 'Color de fondo del badge superior del dock de producto.',
             ],
             'widget_product_cta_background_color' => [
                 'label' => 'Fondo CTA producto',

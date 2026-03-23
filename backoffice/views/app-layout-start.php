@@ -4,8 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= e($title) ?></title>
-  <?php $cssVersion = @filemtime(__DIR__ . '/../assets/app.css') ?: time(); ?>
-  <link rel="stylesheet" href="/assets/app.css?v=<?= (int) $cssVersion ?>">
+  <link rel="stylesheet" href="<?= e(assetUrl('app.css')) ?>">
 </head>
 <body class="app-body">
 <div class="app-shell">

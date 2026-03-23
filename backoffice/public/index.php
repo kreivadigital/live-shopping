@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 session_start();
 
+define('LIVEPRO_ASSET_BASE_URL', '/assets');
+
 $debugBoot = isset($_GET['__debug_boot']);
 $lastBootCheckpoint = 'session_start';
 

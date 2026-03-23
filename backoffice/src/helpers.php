@@ -124,3 +124,36 @@ function extractYoutubeVideoId(?string $url): ?string
 
     return null;
 }
+
+/**
+ * Returns the public asset base URL for the current entrypoint.
+ */
+function assetBaseUrl(): string
+{
+    if (defined('LIVEPRO_ASSET_BASE_URL')) {
+        return rtrim((string) LIVEPRO_ASSET_BASE_URL, '/');
+    }
+
+    return '/assets';
+}
+
+/**
+ * Builds a versioned public asset URL for the backoffice frontend.
+ */
+function assetUrl(string $path): string
+{
+    $normalizedPath = ltrim($path, '/');
+    $version = assetVersion($normalizedPath);
+
+    return assetBaseUrl() . '/' . $normalizedPath . '?v=' . $version;
+}
+
+/**
+ * Returns the filemtime version for a public backoffice asset.
+ */
+function assetVersion(string $path): int
+{
+    $normalizedPath = ltrim($path, '/');
+    $assetFile = __DIR__ . '/../public/assets/' . $normalizedPath;
+    return @filemtime($assetFile) ?: time();
+}

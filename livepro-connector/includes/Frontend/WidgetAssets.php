@@ -78,7 +78,15 @@ final class WidgetAssets
                 'labels' => [
                     'previewCta' => (string) ($settings['widget_preview_cta_label'] ?? 'VER AHORA'),
                     'productCta' => (string) ($settings['widget_product_cta_label'] ?? 'VER PRODUCTO'),
+                    'productTag' => (string) ($settings['widget_product_tag_label'] ?? 'DESTACADO'),
                     'liveBadge' => (string) ($settings['widget_live_badge_label'] ?? 'VIVO'),
+                ],
+                'colors' => [
+                    'productPrice' => (string) ($settings['widget_product_price_color'] ?? '#4f4bf0'),
+                    'productTagText' => (string) ($settings['widget_product_tag_color'] ?? '#8b9bbb'),
+                    'productTagBackground' => (string) ($settings['widget_product_tag_background_color'] ?? '#eef2f8'),
+                    'productCtaBackground' => (string) ($settings['widget_product_cta_background_color'] ?? '#4f4bf0'),
+                    'productCtaText' => (string) ($settings['widget_product_cta_text_color'] ?? '#ffffff'),
                 ],
                 'indicators' => [
                     'showLiveBadge' => !empty($settings['widget_show_live_badge']),
