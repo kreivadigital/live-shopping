@@ -442,13 +442,14 @@
             ` : ''}
           </div>
 
-          <div class="livepro-product-sheet__summary">
-            <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
-            <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
-            <p class="livepro-product-sheet__stock is-hidden" aria-hidden="true">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
-          </div>
-
-          <div class="livepro-product-sheet__blocks">
+          <div class="livepro-product-sheet__details">
+            <div class="livepro-product-sheet__summary">
+              <div class="livepro-product-sheet__summary-row">
+                <p class="livepro-product-sheet__title">${escapeHtml(product.name)}</p>
+                <p class="livepro-product-sheet__price">${escapeHtml(product.price)}</p>
+              </div>
+              <p class="livepro-product-sheet__stock is-hidden" aria-hidden="true">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
+            </div>
             ${variationState.interactive
               ? renderSelectableInfoGroup('Color', 'color', variationState.colorOptions, 'No informado')
               : renderInfoGroup('Color', product.colors, 'No informado')}

@@ -597,8 +597,21 @@
   inset: 0;
 }
 
+.livepro-product-sheet__summary {
+  display: grid;
+  gap: 10px;
+}
+
+.livepro-product-sheet__summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .livepro-product-sheet__title {
-  margin: 0 0 8px;
+  flex: 1 1 auto;
+  margin: 0;
   color: #23314f;
   font-size: 20px;
   line-height: 1.05;
@@ -606,11 +619,14 @@
 }
 
 .livepro-product-sheet__price {
-  margin: 0 0 10px;
+  flex: 0 0 auto;
+  margin: 0;
   color: #4f4bf0;
   font-size: 18px;
   line-height: 1;
   font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .livepro-product-sheet__stock {
@@ -717,13 +733,19 @@
   box-shadow: 0 0 0 4px rgba(90, 82, 244, 0.12);
 }
 
-.livepro-product-sheet__blocks {
-  display: grid;
+.livepro-product-sheet__details {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
 
+.livepro-info-group {
+  display: grid;
+  gap: 10px;
+}
+
 .livepro-info-group__label {
-  margin: 0 0 10px;
+  margin: 0;
   color: #90a0bc;
   font-size: 10px;
   line-height: 1;
@@ -742,10 +764,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 50px;
-  min-height: 35px;
+  min-width: 56px;
+  max-height: 23px;
   margin: 0;
-  padding: 0 12px;
+  padding: 3px 10px;
   border-radius: 14px;
   border: 1px solid #d6ddec;
   background: #fff;
@@ -893,7 +915,7 @@
     font-size: 20px;
   }
 
-  .livepro-product-sheet__blocks {
+  .livepro-product-sheet__details {
     gap: 12px;
   }
 
@@ -902,9 +924,6 @@
   }
 
   .livepro-info-token {
-    min-width: 55px;
-    min-height: 40px;
-    padding: 0 10px;
     font-size: 12px;
   }
 
