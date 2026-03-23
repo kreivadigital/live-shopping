@@ -22,11 +22,14 @@
     sheetProductSnapshot: null,
     activePhotoIndex: 0,
     isMuted: widgetCfg.startMuted,
+    isPaused: !widgetCfg.autoplay,
     live: null,
     liveItems: [],
     liveRevision: 0,
     liveSessionKey: '',
     followLive: true,
+    dockTransitioning: false,
+    pendingProductKey: '',
     mountedVideoId: null,
     lastProductSignature: '',
     activeProductKey: '',
@@ -49,6 +52,8 @@
       state.liveRevision = 0
       state.liveSessionKey = ''
       state.followLive = true
+      state.dockTransitioning = false
+      state.pendingProductKey = ''
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
@@ -56,6 +61,7 @@
       state.activePhotoIndex = 0
       state.activeProductKey = ''
       state.lastProductSignature = ''
+      state.isPaused = !widgetCfg.autoplay
       return
     }
 
@@ -121,6 +127,9 @@
             ${renderStatusPills(viewers, 'panel')}
           </div>
           <div class="livepro-shell__actions">
+            <button class="livepro-icon-btn livepro-pause" type="button" aria-label="${escapeAttribute(getPauseButtonLabel())}">
+              ${renderPauseIcon(state.isPaused)}
+            </button>
             <button class="livepro-icon-btn livepro-mute" type="button" aria-label="Silenciar o activar audio">
               ${renderVolumeIcon(state.isMuted)}
             </button>
@@ -139,6 +148,7 @@
     `
 
     bindExpandedInteractions(product)
+    syncDockTrackPosition(false)
 
     if (state.shellOpening) {
       animateShellIn()
@@ -150,6 +160,15 @@
   }
 
   function bindExpandedInteractions(product) {
+    const playerFrame = root.querySelector('.livepro-shell__iframe')
+    if (playerFrame && playerFrame.dataset.bound !== '1') {
+      playerFrame.addEventListener('load', () => {
+        registerPlayerBridge()
+        syncPlayerStateToFrame()
+      })
+      playerFrame.dataset.bound = '1'
+    }
+
     const closeButton = root.querySelector('.livepro-close')
     if (closeButton && closeButton.dataset.bound !== '1') {
       closeButton.addEventListener('click', () => {
@@ -158,44 +177,54 @@
       closeButton.dataset.bound = '1'
     }
 
+    const pauseButton = root.querySelector('.livepro-pause')
+    if (pauseButton && pauseButton.dataset.bound !== '1') {
+      pauseButton.addEventListener('click', () => {
+        const nextPaused = !state.isPaused
+        state.isPaused = nextPaused
+        sendPlayerCommand(nextPaused ? 'pauseVideo' : 'playVideo')
+        syncPlayerActionButtons()
+      })
+      pauseButton.dataset.bound = '1'
+    }
+
     const muteButton = root.querySelector('.livepro-mute')
     if (muteButton && muteButton.dataset.bound !== '1') {
       muteButton.addEventListener('click', () => {
-        state.isMuted = !state.isMuted
-        render()
+        const nextMuted = !state.isMuted
+        state.isMuted = nextMuted
+        sendPlayerCommand(nextMuted ? 'mute' : 'unMute')
+        syncPlayerActionButtons()
       })
       muteButton.dataset.bound = '1'
     }
 
-    const productButton = root.querySelector('.livepro-product-dock__cta')
-    if (productButton && productButton.dataset.bound !== '1') {
-      productButton.addEventListener('click', () => {
-        openProductSheet()
-      })
-      productButton.dataset.bound = '1'
-    }
-
-    const activeCard = root.querySelector('.livepro-product-dock__card--active')
-    if (activeCard && activeCard.dataset.bound !== '1') {
-      activeCard.addEventListener('click', (event) => {
-        if (event.target && event.target.closest('.livepro-product-dock__cta')) {
-          return
-        }
-
-        openProductSheet()
-      })
-      activeCard.dataset.bound = '1'
-    }
-
-    root.querySelectorAll('.livepro-product-dock__peek').forEach((peek) => {
-      if (peek.dataset.bound === '1') {
+    root.querySelectorAll('.livepro-product-dock__slide').forEach((slide) => {
+      if (slide.dataset.bound === '1') {
         return
       }
 
-      peek.addEventListener('click', () => {
-        setDisplayedProductByKey(String(peek.dataset.productKey || ''))
+      slide.addEventListener('click', (event) => {
+        const slideKey = String(slide.dataset.productKey || '')
+        if (!slideKey) {
+          return
+        }
+
+        const isActive = slide.dataset.active === '1'
+        if (isActive) {
+          if (event.target && event.target.closest('.livepro-product-dock__cta')) {
+            openProductSheet()
+            return
+          }
+
+          openProductSheet()
+          return
+        }
+
+        setDisplayedProductByKey(slideKey)
       })
-      peek.dataset.bound = '1'
+
+      slide.dataset.bound = '1'
     })
 
     const dockTrack = root.querySelector('.livepro-product-dock__track')
@@ -265,67 +294,73 @@
   }
 
   function renderProductDock(product) {
-    const dock = getDockViewModel(product)
-    if (!dock.current) {
+    const items = getLiveItems()
+    const activeKey = product && product.key ? String(product.key) : String(getDisplayedLiveProduct().key || '')
+    const latestKey = getLiveActiveProductKey()
+    if (!activeKey || items.length === 0) {
       return ''
     }
 
     return `
-      <div class="livepro-product-dock livepro-product-dock--count-${dock.count} ${dock.hasPrev ? 'has-prev' : 'is-first'} ${dock.hasNext ? 'has-next' : 'is-last'}">
-        <div class="livepro-product-dock__track">
-          ${dock.prev ? renderProductDockPeek(dock.prev, 'prev') : ''}
-          <div class="livepro-product-dock__card livepro-product-dock__card--active" data-product-key="${escapeAttribute(dock.current.key)}">
-            <div class="livepro-product-dock__image-wrap">
-              <img class="livepro-product-dock__image" src="${escapeAttribute(dock.current.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
-            </div>
-
-            <div class="livepro-product-dock__body">
-              <div class="livepro-product-dock__meta">
-                <span class="livepro-product-dock__tag">DESTACADO</span>
-                <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
-                  ${renderStockIcon()}
-                  ${escapeHtml(dock.current.stockLabel)}
-                </span>
-              </div>
-
-              <p class="livepro-product-dock__title">${escapeHtml(dock.current.name)}</p>
-              <p class="livepro-product-dock__price">${escapeHtml(dock.current.price)}</p>
-
-              <button class="livepro-product-dock__cta" type="button">
-                ${renderChevronIcon()}
-                ${escapeHtml(widgetCfg.labels.productCta)}
-              </button>
-            </div>
+      <div class="livepro-product-dock livepro-product-dock--count-${items.length}">
+        <div class="livepro-product-dock__viewport">
+          <div class="livepro-product-dock__track">
+            ${items.map((item) => renderProductDockSlide(item, activeKey, latestKey)).join('')}
           </div>
-          ${dock.next ? renderProductDockPeek(dock.next, 'next') : ''}
         </div>
       </div>
     `
   }
 
-  function renderProductDockPeek(product, direction) {
+  function renderProductDockSlide(rawProduct, activeKey, latestKey) {
+    const product = getProductViewModel(getResolvedProductSource(rawProduct))
+    const isActive = String(product.key) === String(activeKey)
+    const isLatest = String(product.key) === String(latestKey)
+
     return `
-      <button
-        class="livepro-product-dock__peek livepro-product-dock__peek--${escapeAttribute(direction)}"
-        type="button"
+      <div
+        class="livepro-product-dock__slide ${isActive ? 'is-active' : 'is-inactive'}"
         data-product-key="${escapeAttribute(product.key)}"
-        aria-label="Ver ${escapeAttribute(product.name)}"
+        data-active="${isActive ? '1' : '0'}"
       >
-        <div class="livepro-product-dock__card livepro-product-dock__card--peek">
+        <div class="livepro-product-dock__card ${isActive ? 'livepro-product-dock__card--active' : 'livepro-product-dock__card--peek'}">
           <div class="livepro-product-dock__image-wrap">
             <img class="livepro-product-dock__image" src="${escapeAttribute(product.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
           </div>
 
           <div class="livepro-product-dock__body">
-            <div class="livepro-product-dock__meta">
-              <span class="livepro-product-dock__tag">${direction === 'prev' ? 'ANTERIOR' : 'SIGUIENTE'}</span>
+            <div class="livepro-product-dock__body-info">
+              <div class="livepro-product-dock__body-top">
+                <div class="livepro-product-dock__meta">
+                  <span class="livepro-product-dock__tag">${escapeHtml(widgetCfg.labels.productTag)}</span>
+                  <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
+                    ${renderStockIcon()}
+                    ${escapeHtml(product.stockLabel)}
+                  </span>
+                </div>
+                ${isLatest ? renderProductDockStatus() : ''}
+              </div>
+
+              <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
+              <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
             </div>
 
-            <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
-            <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
+            <div class="livepro-product-dock__body-cta">
+              <button class="livepro-product-dock__cta" type="button">
+                ${escapeHtml(widgetCfg.labels.productCta)}
+              </button>
+            </div>
           </div>
         </div>
-      </button>
+      </div>
+    `
+  }
+
+  function renderProductDockStatus() {
+    return `
+      <span class="livepro-product-dock__status" aria-label="Ultimo producto emitido">
+        <span class="livepro-product-dock__status-dot"></span>
+      </span>
     `
   }
 
@@ -399,6 +434,7 @@
       return
     }
 
+    state.isPaused = !widgetCfg.autoplay
     state.shellClosing = false
     state.shellOpening = true
     state.expanded = true
@@ -419,6 +455,7 @@
       state.productSheetOpening = false
       state.productSheetClosing = false
       state.sheetProductSnapshot = null
+      state.isPaused = !widgetCfg.autoplay
       render()
       return
     }
@@ -431,10 +468,13 @@
     window.setTimeout(() => {
       state.expanded = false
       state.shellClosing = false
+      state.dockTransitioning = false
+      state.pendingProductKey = ''
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
       state.sheetProductSnapshot = null
+      state.isPaused = !widgetCfg.autoplay
       render()
     }, TRANSITION_MS)
   }
@@ -581,6 +621,7 @@
 
     state.lastProductSignature = nextSignature
     bindExpandedInteractions(product)
+    syncDockTrackPosition(false)
 
     return true
   }
@@ -639,36 +680,27 @@
     return items.findIndex((item) => String(item && item.key ? item.key : '') === String(displayedKey))
   }
 
-  function getDockViewModel(currentProduct) {
-    const items = getLiveItems()
-    const currentIndex = getDisplayedProductIndex()
-
-    return {
-      count: items.length,
-      current: currentProduct && currentProduct.key ? currentProduct : null,
-      prev: currentIndex > 0 ? getProductViewModel(getResolvedProductSource(items[currentIndex - 1])) : null,
-      next: currentIndex >= 0 && currentIndex < items.length - 1 ? getProductViewModel(getResolvedProductSource(items[currentIndex + 1])) : null,
-      hasPrev: currentIndex > 0,
-      hasNext: currentIndex >= 0 && currentIndex < items.length - 1,
-    }
-  }
-
   function setDisplayedProductByKey(key) {
     const target = getLiveProductByKey(key)
     if (!target || !target.key) {
       return
     }
 
-    state.activeProductKey = String(target.key)
-    state.followLive = state.activeProductKey === getLiveActiveProductKey()
-    state.activePhotoIndex = 0
-
-    if (state.productSheetOpen || state.productSheetClosing) {
-      state.sheetProductSnapshot = cloneProductSnapshot(getResolvedProductSource(target))
+    const targetKey = String(target.key)
+    if (targetKey === state.activeProductKey) {
+      return
     }
 
-    if (!updateExpandedShell()) {
-      render()
+    if (state.dockTransitioning) {
+      state.pendingProductKey = targetKey
+      return
+    }
+
+    if (!state.expanded || !animateDockToProductKey(targetKey)) {
+      applyDisplayedProductKey(targetKey)
+      if (!updateExpandedShell()) {
+        render()
+      }
     }
   }
 
@@ -689,6 +721,113 @@
     }
 
     setDisplayedProductByKey(String(items[nextIndex] && items[nextIndex].key ? items[nextIndex].key : ''))
+  }
+
+  function applyDisplayedProductKey(targetKey) {
+    state.activeProductKey = String(targetKey || '')
+    state.followLive = state.activeProductKey === getLiveActiveProductKey()
+    state.activePhotoIndex = 0
+
+    if (state.productSheetOpen || state.productSheetClosing) {
+      const target = getResolvedProductSource(getLiveProductByKey(targetKey))
+      state.sheetProductSnapshot = cloneProductSnapshot(target)
+    }
+  }
+
+  function animateDockToProductKey(targetKey) {
+    const dock = root.querySelector('.livepro-product-dock')
+    const viewport = root.querySelector('.livepro-product-dock__viewport')
+    const track = root.querySelector('.livepro-product-dock__track')
+
+    if (!dock || !viewport || !track) {
+      return false
+    }
+
+    const targetSlide = track.querySelector(`.livepro-product-dock__slide[data-product-key="${escapeSelector(targetKey)}"]`)
+    if (!targetSlide) {
+      return false
+    }
+
+    state.dockTransitioning = true
+    state.pendingProductKey = ''
+
+    dock.classList.add('is-transitioning')
+    syncDockTrackPosition(true, targetSlide)
+
+    window.setTimeout(() => {
+      dock.classList.remove('is-transitioning')
+      state.dockTransitioning = false
+
+      const queuedKey = state.pendingProductKey && state.pendingProductKey !== targetKey
+        ? state.pendingProductKey
+        : ''
+      state.pendingProductKey = ''
+      applyDisplayedProductKey(targetKey)
+
+      if (!updateExpandedShell()) {
+        render()
+      }
+
+      if (queuedKey) {
+        window.requestAnimationFrame(() => {
+          setDisplayedProductByKey(queuedKey)
+        })
+      }
+    }, TRANSITION_MS)
+
+    return true
+  }
+
+  function syncDockTrackPosition(animate, targetSlide) {
+    const viewport = root.querySelector('.livepro-product-dock__viewport')
+    const track = root.querySelector('.livepro-product-dock__track')
+    if (!viewport || !track) {
+      return
+    }
+
+    const viewportWidth = viewport.clientWidth
+    if (viewportWidth <= 0) {
+      return
+    }
+
+    const gap = viewportWidth <= 420 ? 8 : 10
+    const sidePeek = viewportWidth <= 420 ? 52 : 64
+    const cardWidth = Math.max(220, viewportWidth - (sidePeek * 2))
+
+    viewport.style.setProperty('--livepro-dock-gap', `${gap}px`)
+    viewport.style.setProperty('--livepro-dock-side-peek', `${sidePeek}px`)
+    viewport.style.setProperty('--livepro-dock-card-width', `${cardWidth}px`)
+
+    const activeSlide = targetSlide || track.querySelector(`.livepro-product-dock__slide[data-product-key="${escapeSelector(state.activeProductKey)}"]`) || track.querySelector('.livepro-product-dock__slide')
+    if (!activeSlide) {
+      return
+    }
+
+    const trackWidth = track.scrollWidth
+    const slideWidth = activeSlide.offsetWidth
+    const maxTranslate = 0
+    const minTranslate = Math.min(0, viewportWidth - trackWidth)
+    const activeIndex = Array.prototype.indexOf.call(track.children, activeSlide)
+    const lastIndex = Math.max(0, track.children.length - 1)
+
+    let desiredLeft = 0
+    if (activeIndex > 0 && activeIndex < lastIndex) {
+      desiredLeft = Math.max(0, (viewportWidth - slideWidth) / 2)
+    } else if (activeIndex === lastIndex && lastIndex > 0) {
+      desiredLeft = Math.max(0, viewportWidth - slideWidth)
+    }
+
+    const slideLeft = activeSlide.offsetLeft
+    const nextTranslate = clamp(desiredLeft - slideLeft, minTranslate, maxTranslate)
+
+    track.style.transition = animate ? `transform ${TRANSITION_MS}ms ease` : 'none'
+    track.style.transform = `translate3d(${nextTranslate}px, 0, 0)`
+
+    if (!animate) {
+      window.requestAnimationFrame(() => {
+        track.style.transition = ''
+      })
+    }
   }
 
   function getDisplayedProductViewModel(liveProduct) {
@@ -762,7 +901,14 @@
       }
 
       const nextVideoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : null
+      if (prevVideoId !== nextVideoId) {
+        state.isPaused = !widgetCfg.autoplay
+      }
       ensureRelevantProductFallbacks()
+
+      if (state.dockTransitioning) {
+        return
+      }
 
       if (state.expanded && prevVideoId && nextVideoId && prevVideoId === nextVideoId && state.mountedVideoId === nextVideoId) {
         updateExpandedShell()
@@ -775,6 +921,9 @@
       state.liveRevision = 0
       state.liveSessionKey = ''
       state.followLive = true
+      state.dockTransitioning = false
+      state.pendingProductKey = ''
+      state.isPaused = !widgetCfg.autoplay
       render()
     }
   }
@@ -832,6 +981,11 @@
     const shouldFollow = state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey) || previousActiveKey !== nextActiveKey
 
     if (shouldFollow) {
+      if (state.dockTransitioning && state.expanded) {
+        state.pendingProductKey = nextActiveKey
+        return
+      }
+
       state.activeProductKey = nextActiveKey
       state.followLive = true
     }
@@ -858,6 +1012,11 @@
 
     const nextActiveKey = normalized.live.active_item_key || ''
     if (state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey)) {
+      if (state.dockTransitioning && state.expanded) {
+        state.pendingProductKey = nextActiveKey
+        return
+      }
+
       state.activeProductKey = nextActiveKey
       state.followLive = true
     }
@@ -934,10 +1093,20 @@
   function ensureRelevantProductFallbacks() {
     const liveProduct = getLiveActiveProduct()
     const displayedProduct = getDisplayedLiveProduct()
+    const items = getLiveItems()
+    const displayedIndex = getDisplayedProductIndex()
 
     ensureProductFallback(liveProduct)
     if (displayedProduct && displayedProduct.key !== liveProduct.key) {
       ensureProductFallback(displayedProduct)
+    }
+
+    if (displayedIndex > 0) {
+      ensureProductFallback(items[displayedIndex - 1])
+    }
+
+    if (displayedIndex >= 0 && displayedIndex < items.length - 1) {
+      ensureProductFallback(items[displayedIndex + 1])
     }
   }
 
@@ -946,6 +1115,11 @@
     root.style.setProperty('--livepro-width-mobile', widgetCfg.widthMobile ? `${widgetCfg.widthMobile}px` : 'calc(100vw - 24px)')
     root.style.setProperty('--livepro-offset-x', `${widgetCfg.offset.x}px`)
     root.style.setProperty('--livepro-offset-y', `${widgetCfg.offset.y}px`)
+    root.style.setProperty('--livepro-product-price-color', widgetCfg.colors.productPrice)
+    root.style.setProperty('--livepro-product-tag-text-color', widgetCfg.colors.productTagText)
+    root.style.setProperty('--livepro-product-tag-background-color', widgetCfg.colors.productTagBackground)
+    root.style.setProperty('--livepro-product-cta-background-color', widgetCfg.colors.productCtaBackground)
+    root.style.setProperty('--livepro-product-cta-text-color', widgetCfg.colors.productCtaText)
 
     root.dataset.orientation = widgetCfg.orientation
     root.dataset.mobilePresentation = widgetCfg.mobilePresentationMode
@@ -1062,7 +1236,15 @@
       labels: {
         previewCta: String(config.labels && config.labels.previewCta ? config.labels.previewCta : 'VER AHORA'),
         productCta: String(config.labels && config.labels.productCta ? config.labels.productCta : 'VER PRODUCTO'),
+        productTag: String(config.labels && config.labels.productTag ? config.labels.productTag : 'DESTACADO'),
         liveBadge: String(config.labels && config.labels.liveBadge ? config.labels.liveBadge : 'VIVO'),
+      },
+      colors: {
+        productPrice: String(config.colors && config.colors.productPrice ? config.colors.productPrice : '#4f4bf0'),
+        productTagText: String(config.colors && config.colors.productTagText ? config.colors.productTagText : '#8b9bbb'),
+        productTagBackground: String(config.colors && config.colors.productTagBackground ? config.colors.productTagBackground : '#eef2f8'),
+        productCtaBackground: String(config.colors && config.colors.productCtaBackground ? config.colors.productCtaBackground : '#4f4bf0'),
+        productCtaText: String(config.colors && config.colors.productCtaText ? config.colors.productCtaText : '#ffffff'),
       },
       indicators: {
         showLiveBadge: config.indicators ? config.indicators.showLiveBadge !== false : true,
@@ -1227,6 +1409,8 @@
     const params = new URLSearchParams({
       autoplay: autoplay ? '1' : '0',
       mute: muted ? '1' : '0',
+      enablejsapi: '1',
+      origin: window.location.origin,
       playsinline: '1',
       rel: '0',
       controls: '1',
@@ -1351,6 +1535,14 @@
     return escapeHtml(value || '').replaceAll('`', '')
   }
 
+  function escapeSelector(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(String(value || ''))
+    }
+
+    return String(value || '').replace(/["\\]/g, '\\$&')
+  }
+
   function productSignature(product) {
     if (!product) {
       return ''
@@ -1414,6 +1606,25 @@
       `
   }
 
+  function renderPauseIcon(isPaused) {
+    return isPaused
+      ? `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 7.8L16.8 12L9 16.2V7.8Z"></path>
+        </svg>
+      `
+      : `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 6.5V17.5"></path>
+          <path d="M15 6.5V17.5"></path>
+        </svg>
+      `
+  }
+
+  function getPauseButtonLabel() {
+    return state.isPaused ? 'Reanudar video' : 'Pausar video'
+  }
+
   function renderCloseIcon() {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1452,6 +1663,138 @@
     `
   }
 
+  function getPlayerFrame() {
+    return root.querySelector('.livepro-shell__iframe')
+  }
+
+  function sendPlayerCommand(command, args) {
+    const frame = getPlayerFrame()
+    if (!frame || !frame.contentWindow) {
+      return false
+    }
+
+    frame.contentWindow.postMessage(JSON.stringify({
+      event: 'command',
+      func: command,
+      args: Array.isArray(args) ? args : [],
+    }), 'https://www.youtube.com')
+
+    return true
+  }
+
+  function syncPlayerStateToFrame() {
+    sendPlayerCommand(state.isMuted ? 'mute' : 'unMute')
+    sendPlayerCommand(state.isPaused ? 'pauseVideo' : 'playVideo')
+    syncPlayerActionButtons()
+  }
+
+  function registerPlayerBridge() {
+    const frame = getPlayerFrame()
+    if (!frame || !frame.contentWindow) {
+      return
+    }
+
+    frame.contentWindow.postMessage(JSON.stringify({
+      event: 'listening',
+      id: `livepro-${state.mountedVideoId || 'player'}`,
+      channel: 'livepro-widget',
+    }), 'https://www.youtube.com')
+
+    frame.contentWindow.postMessage(JSON.stringify({
+      event: 'command',
+      func: 'addEventListener',
+      args: ['onStateChange'],
+    }), 'https://www.youtube.com')
+  }
+
+  function syncPlayerActionButtons() {
+    const pauseButton = root.querySelector('.livepro-pause')
+    if (pauseButton) {
+      pauseButton.innerHTML = renderPauseIcon(state.isPaused)
+      pauseButton.setAttribute('aria-label', getPauseButtonLabel())
+    }
+
+    const muteButton = root.querySelector('.livepro-mute')
+    if (muteButton) {
+      muteButton.innerHTML = renderVolumeIcon(state.isMuted)
+      muteButton.setAttribute('aria-label', 'Silenciar o activar audio')
+    }
+  }
+
+  function handlePlayerMessage(event) {
+    if (!isYouTubeOrigin(event.origin)) {
+      return
+    }
+
+    const frame = getPlayerFrame()
+    if (!frame || event.source !== frame.contentWindow) {
+      return
+    }
+
+    const payload = parsePlayerMessage(event.data)
+    if (!payload || typeof payload !== 'object') {
+      return
+    }
+
+    const nextMuted = readPlayerMuted(payload)
+    if (typeof nextMuted === 'boolean') {
+      state.isMuted = nextMuted
+    }
+
+    const nextPaused = readPlayerPaused(payload)
+    if (typeof nextPaused === 'boolean') {
+      state.isPaused = nextPaused
+    }
+
+    if (typeof nextMuted === 'boolean' || typeof nextPaused === 'boolean') {
+      syncPlayerActionButtons()
+    }
+  }
+
+  function parsePlayerMessage(value) {
+    if (!value) {
+      return null
+    }
+
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value)
+      } catch (_error) {
+        return null
+      }
+    }
+
+    return typeof value === 'object' ? value : null
+  }
+
+  function readPlayerMuted(payload) {
+    if (payload.info && typeof payload.info.muted === 'boolean') {
+      return payload.info.muted
+    }
+
+    return null
+  }
+
+  function readPlayerPaused(payload) {
+    const playerState = payload.event === 'onStateChange' && typeof payload.info === 'number'
+      ? payload.info
+      : (payload.info && typeof payload.info.playerState === 'number' ? payload.info.playerState : null)
+
+    if (playerState === 1 || playerState === 3) {
+      return false
+    }
+
+    if (playerState === 0 || playerState === 2 || playerState === 5) {
+      return true
+    }
+
+    return null
+  }
+
+  function isYouTubeOrigin(origin) {
+    return origin === 'https://www.youtube.com' || origin === 'https://www.youtube-nocookie.com'
+  }
+
   function renderStockSparkIcon() {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1484,5 +1827,11 @@
   }
 
   pollLive()
+  window.addEventListener('message', handlePlayerMessage)
+  window.addEventListener('resize', () => {
+    if (state.expanded) {
+      syncDockTrackPosition(false)
+    }
+  })
   setInterval(pollLive, Number(cfg.pollMs || 5000))
 })()
