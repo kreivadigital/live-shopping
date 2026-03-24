@@ -6,7 +6,7 @@
   const cfg = window.LiveProWidgetConfig
   const widgetCfg = normalizeWidgetConfig(cfg.widget || {})
   const storeId = Number(cfg.storeId || 0)
-  const TRANSITION_MS = 300
+  const TRANSITION_DELTA_MS = 1000
 
   if (!storeId || !cfg.backofficeUrl) {
     return
@@ -16,6 +16,7 @@
     expanded: false,
     shellOpening: false,
     shellClosing: false,
+    dockCollapsed: false,
     productSheetOpen: false,
     productSheetOpening: false,
     productSheetClosing: false,
@@ -34,6 +35,7 @@
     followLive: true,
     dockTransitioning: false,
     pendingProductKey: '',
+    pendingIncomingProductKey: '',
     mountedVideoId: null,
     lastProductSignature: '',
     activeProductKey: '',
@@ -56,8 +58,10 @@
       state.liveRevision = 0
       state.liveSessionKey = ''
       state.followLive = true
+      state.dockCollapsed = false
       state.dockTransitioning = false
       state.pendingProductKey = ''
+      state.pendingIncomingProductKey = ''
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
@@ -215,14 +219,36 @@
           return
         }
 
-        const isActive = slide.dataset.active === '1'
-        if (isActive) {
-          if (event.target && event.target.closest('.livepro-product-dock__cta')) {
-            openProductSheet()
-            return
+        if (event.target && event.target.closest('.livepro-product-dock__close')) {
+          state.dockCollapsed = true
+          if (!updateExpandedShell()) {
+            render()
+          }
+          return
+        }
+
+        if (state.dockCollapsed) {
+          state.dockCollapsed = false
+
+          if (slideKey !== state.activeProductKey) {
+            applyDisplayedProductKey(slideKey)
           }
 
-          openProductSheet()
+          if (!updateExpandedShell()) {
+            render()
+          }
+          return
+        }
+
+        const isActive = slide.dataset.active === '1'
+        if (event.target && event.target.closest('.livepro-product-dock__cta')) {
+          if (isActive) {
+            openProductSheet()
+          }
+          return
+        }
+
+        if (isActive) {
           return
         }
 
@@ -327,15 +353,17 @@
   }
 
   function renderProductDock(product) {
-    const items = getLiveItems()
     const activeKey = product && product.key ? String(product.key) : String(getDisplayedLiveProduct().key || '')
+    const items = state.dockCollapsed
+      ? [getLiveProductByKey(activeKey)].filter((item) => item && item.key)
+      : getDockItems()
     const latestKey = getLiveActiveProductKey()
     if (!activeKey || items.length === 0) {
       return ''
     }
 
     return `
-      <div class="livepro-product-dock livepro-product-dock--count-${items.length}">
+      <div class="livepro-product-dock livepro-product-dock--count-${items.length}${state.dockCollapsed ? ' livepro-product-dock--collapsed' : ''}">
         <div class="livepro-product-dock__viewport">
           <div class="livepro-product-dock__track">
             ${items.map((item) => renderProductDockSlide(item, activeKey, latestKey)).join('')}
@@ -349,6 +377,14 @@
     const product = getProductViewModel(getResolvedProductSource(rawProduct))
     const isActive = String(product.key) === String(activeKey)
     const isLatest = String(product.key) === String(latestKey)
+    const isCollapsed = state.dockCollapsed
+    const closeSlot = !isCollapsed
+      ? `
+        <button class="livepro-product-dock__close" type="button" aria-label="Colapsar dock">
+          ${renderDockCloseIcon()}
+        </button>
+      `
+      : ''
 
     return `
       <div
@@ -356,34 +392,51 @@
         data-product-key="${escapeAttribute(product.key)}"
         data-active="${isActive ? '1' : '0'}"
       >
-        <div class="livepro-product-dock__card ${isActive ? 'livepro-product-dock__card--active' : 'livepro-product-dock__card--peek'}">
-          <div class="livepro-product-dock__image-wrap">
-            <img class="livepro-product-dock__image" src="${escapeAttribute(product.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
-          </div>
+        <div class="livepro-product-dock__card ${isActive ? 'livepro-product-dock__card--active' : 'livepro-product-dock__card--peek'}${isCollapsed ? ' livepro-product-dock__card--collapsed' : ''}">
+          ${isCollapsed ? '' : `
+            <div class="livepro-product-dock__image-wrap">
+              <img class="livepro-product-dock__image" src="${escapeAttribute(product.primaryImage)}" alt="Producto" onerror="this.style.display='none'">
+            </div>
+          `}
 
           <div class="livepro-product-dock__body">
             <div class="livepro-product-dock__body-info">
-              <div class="livepro-product-dock__body-top">
-                <div class="livepro-product-dock__meta">
-                  <span class="livepro-product-dock__tag">${escapeHtml(widgetCfg.labels.productTag)}</span>
-                  <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
-                    ${renderStockIcon()}
-                    ${escapeHtml(product.stockLabel)}
-                  </span>
+              ${isCollapsed ? `
+                ${isLatest ? `<div class="livepro-product-dock__status-corner">${renderProductDockStatus()}</div>` : ''}
+              ` : `
+                <div class="livepro-product-dock__body-top">
+                  <div class="livepro-product-dock__meta">
+                    <span class="livepro-product-dock__tag">${escapeHtml(widgetCfg.labels.productTag)}</span>
+                    <span class="livepro-product-dock__stock is-hidden" aria-hidden="true">
+                      ${renderStockIcon()}
+                      ${escapeHtml(product.stockLabel)}
+                    </span>
+                  </div>
+                  ${isLatest ? renderProductDockStatus() : ''}
                 </div>
-                ${isLatest ? renderProductDockStatus() : ''}
+              `}
+
+              ${isCollapsed ? `
+                <div class="livepro-product-dock__summary-row">
+                  <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
+                  <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
+                </div>
+              ` : `
+                <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
+                <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
+              `}
+            </div>
+
+            ${isCollapsed ? '' : `
+              <div class="livepro-product-dock__body-cta">
+                <button class="livepro-product-dock__cta" type="button">
+                  ${escapeHtml(widgetCfg.labels.productCta)}
+                </button>
               </div>
-
-              <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
-              <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
-            </div>
-
-            <div class="livepro-product-dock__body-cta">
-              <button class="livepro-product-dock__cta" type="button">
-                ${escapeHtml(widgetCfg.labels.productCta)}
-              </button>
-            </div>
+            `}
           </div>
+
+          ${closeSlot}
         </div>
       </div>
     `
@@ -491,6 +544,7 @@
       state.expanded = false
       state.shellOpening = false
       state.shellClosing = false
+      state.dockCollapsed = false
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
@@ -509,8 +563,10 @@
     window.setTimeout(() => {
       state.expanded = false
       state.shellClosing = false
+      state.dockCollapsed = false
       state.dockTransitioning = false
       state.pendingProductKey = ''
+      state.pendingIncomingProductKey = ''
       state.productSheetOpen = false
       state.productSheetOpening = false
       state.productSheetClosing = false
@@ -518,7 +574,7 @@
       clearSheetSelection()
       state.isPaused = !widgetCfg.autoplay
       render()
-    }, TRANSITION_MS)
+    }, TRANSITION_DELTA_MS)
   }
 
   function openProductSheet() {
@@ -580,7 +636,7 @@
       if (!updateExpandedShell()) {
         render()
       }
-    }, TRANSITION_MS)
+    }, TRANSITION_DELTA_MS)
   }
 
   function animateShellIn() {
@@ -594,7 +650,7 @@
       shell.classList.add('is-open')
       window.setTimeout(() => {
         state.shellOpening = false
-      }, TRANSITION_MS)
+      }, TRANSITION_DELTA_MS)
     })
   }
 
@@ -609,7 +665,7 @@
       sheet.classList.add('is-open')
       window.setTimeout(() => {
         state.productSheetOpening = false
-      }, TRANSITION_MS)
+      }, TRANSITION_DELTA_MS)
     })
   }
 
@@ -937,6 +993,10 @@
     return Array.isArray(state.liveItems) ? state.liveItems : []
   }
 
+  function getDockItems() {
+    return getLiveItems().slice().reverse()
+  }
+
   function getLiveActiveProductKey() {
     const activeKey = state.live && state.live.active_item_key ? String(state.live.active_item_key) : ''
     if (activeKey) {
@@ -973,7 +1033,7 @@
   }
 
   function getDisplayedProductIndex() {
-    const items = getLiveItems()
+    const items = getDockItems()
     const displayedKey = getDisplayedLiveProduct().key
     if (!displayedKey) {
       return -1
@@ -1007,7 +1067,7 @@
   }
 
   function moveDisplayedProduct(step) {
-    const items = getLiveItems()
+    const items = getDockItems()
     if (items.length <= 1) {
       return
     }
@@ -1076,7 +1136,7 @@
           setDisplayedProductByKey(queuedKey)
         })
       }
-    }, TRANSITION_MS)
+    }, TRANSITION_DELTA_MS)
 
     return true
   }
@@ -1085,6 +1145,18 @@
     const viewport = root.querySelector('.livepro-product-dock__viewport')
     const track = root.querySelector('.livepro-product-dock__track')
     if (!viewport || !track) {
+      return
+    }
+
+    if (state.dockCollapsed) {
+      track.style.transition = animate ? `transform ${TRANSITION_DELTA_MS}ms ease` : 'none'
+      track.style.transform = 'translate3d(0, 0, 0)'
+
+      if (!animate) {
+        window.requestAnimationFrame(() => {
+          track.style.transition = ''
+        })
+      }
       return
     }
 
@@ -1119,7 +1191,7 @@
       const desiredRight = viewportWidth - paddingRight
       const activeRight = activeSlide.offsetLeft + slideWidth
       const desiredTranslate = desiredRight - activeRight
-      track.style.transition = animate ? `transform ${TRANSITION_MS}ms ease` : 'none'
+      track.style.transition = animate ? `transform ${TRANSITION_DELTA_MS}ms ease` : 'none'
       track.style.transform = `translate3d(${clamp(desiredTranslate, minTranslate, maxTranslate)}px, 0, 0)`
 
       if (!animate) {
@@ -1135,7 +1207,7 @@
     const slideLeft = activeSlide.offsetLeft
     const nextTranslate = clamp(desiredLeft - slideLeft, minTranslate, maxTranslate)
 
-    track.style.transition = animate ? `transform ${TRANSITION_MS}ms ease` : 'none'
+    track.style.transition = animate ? `transform ${TRANSITION_DELTA_MS}ms ease` : 'none'
     track.style.transform = `translate3d(${nextTranslate}px, 0, 0)`
 
     if (!animate) {
@@ -1230,14 +1302,18 @@
       } else {
         render()
       }
+
+      flushPendingIncomingProductFocus()
     } catch (_error) {
       state.live = null
       state.liveItems = []
       state.liveRevision = 0
       state.liveSessionKey = ''
       state.followLive = true
+      state.dockCollapsed = false
       state.dockTransitioning = false
       state.pendingProductKey = ''
+      state.pendingIncomingProductKey = ''
       state.isPaused = !widgetCfg.autoplay
       render()
     }
@@ -1295,6 +1371,10 @@
     const nextActiveKey = normalized.live.active_item_key || ''
     const shouldFollow = state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey) || previousActiveKey !== nextActiveKey
 
+    if (isProductSheetVisible()) {
+      return
+    }
+
     if (shouldFollow) {
       if (state.dockTransitioning && state.expanded) {
         state.pendingProductKey = nextActiveKey
@@ -1308,6 +1388,7 @@
 
   function applyLiveDelta(delta) {
     const normalized = normalizeLivePayload(delta)
+    const previousItemKeys = new Set(getLiveItems().map((item) => String(item && item.key ? item.key : '')))
 
     if (!normalized.live.is_live) {
       state.live = normalized.live
@@ -1315,7 +1396,9 @@
       state.liveRevision = 0
       state.liveSessionKey = ''
       state.followLive = true
+      state.dockCollapsed = false
       state.activeProductKey = ''
+      state.pendingIncomingProductKey = ''
       state.sheetProductSnapshot = null
       return
     }
@@ -1325,7 +1408,34 @@
     state.liveSessionKey = normalized.sessionKey
     state.liveItems = mergeLiveItems(state.liveItems, normalized.items)
 
+    const newestIncomingKey = normalized.items
+      .filter((item) => item && item.key && !previousItemKeys.has(String(item.key)))
+      .map((item) => String(item.key))
+      .pop() || ''
+
+    if (newestIncomingKey) {
+      if (isProductSheetVisible()) {
+        state.followLive = false
+        state.pendingIncomingProductKey = ''
+        return
+      }
+
+      state.followLive = true
+
+      if (state.expanded) {
+        state.pendingIncomingProductKey = newestIncomingKey
+        return
+      }
+
+      state.activeProductKey = newestIncomingKey
+      return
+    }
+
     const nextActiveKey = normalized.live.active_item_key || ''
+    if (isProductSheetVisible()) {
+      return
+    }
+
     if (state.followLive || !state.activeProductKey || !hasLiveItem(state.activeProductKey)) {
       if (state.dockTransitioning && state.expanded) {
         state.pendingProductKey = nextActiveKey
@@ -1399,6 +1509,29 @@
     })
 
     return Object.values(byKey).sort((left, right) => Number(left.last_revision || 0) - Number(right.last_revision || 0))
+  }
+
+  function flushPendingIncomingProductFocus() {
+    if (!state.pendingIncomingProductKey) {
+      return
+    }
+
+    if (!state.expanded || isProductSheetVisible()) {
+      return
+    }
+
+    const targetKey = String(state.pendingIncomingProductKey || '')
+    state.pendingIncomingProductKey = ''
+
+    if (!targetKey) {
+      return
+    }
+
+    setDisplayedProductByKey(targetKey)
+  }
+
+  function isProductSheetVisible() {
+    return state.productSheetOpen || state.productSheetOpening || state.productSheetClosing
   }
 
   function hasLiveItem(key) {
@@ -2213,6 +2346,15 @@
           <path d="M9.2 5.8L15.9 12L9.2 18.2"></path>
         </svg>
       `
+  }
+
+  function renderDockCloseIcon() {
+    return `
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M6 6L14 14"></path>
+        <path d="M14 6L6 14"></path>
+      </svg>
+    `
   }
 
   pollLive()
