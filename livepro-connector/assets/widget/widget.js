@@ -41,6 +41,16 @@
     activeProductKey: '',
     fallbackCache: {},
     fallbackStatus: {},
+    cartConfirmationVisible: false,
+    cartConfirmationItem: null,
+    cartViewOpen: false,
+    cartViewOpening: false,
+    cartViewClosing: false,
+    cart: null,
+    cartLoading: false,
+    cartError: null,
+    addToCartLoading: false,
+    addToCartError: null,
   }
 
   const root = document.createElement('div')
@@ -89,6 +99,8 @@
     const viewers = getViewerLabel()
     const pills = renderStatusPills(viewers, 'mini')
 
+    const cartCount = state.cart ? state.cart.item_count : 0
+
     root.innerHTML = `
       <button class="livepro-mini" type="button" aria-label="Abrir live shopping">
         ${previewImage ? `<img class="livepro-mini__bg" src="${escapeAttribute(previewImage)}" alt="Preview live">` : ''}
@@ -98,6 +110,7 @@
           <span class="livepro-mini__play">${renderPlayIcon()}</span>
           <span class="livepro-mini__cta">${escapeHtml(widgetCfg.labels.previewCta)}</span>
         </span>
+        <span class="livepro-mini__cart-badge${cartCount === 0 ? ' is-hidden' : ''}">${cartCount}</span>
       </button>
     `
 
@@ -138,6 +151,12 @@
             ${renderStatusPills(viewers, 'panel')}
           </div>
           <div class="livepro-shell__actions">
+            <button class="livepro-icon-btn livepro-cart-btn" type="button" aria-label="Ver carrito">
+              ${renderCartIcon()}
+              <span class="livepro-cart-badge${(!state.cart || state.cart.item_count === 0) ? ' is-hidden' : ''}">
+                <span class="livepro-cart-badge__count">${state.cart ? state.cart.item_count : 0}</span>
+              </span>
+            </button>
             <button class="livepro-icon-btn livepro-pause" type="button" aria-label="${escapeAttribute(getPauseButtonLabel())}">
               ${renderPauseIcon(state.isPaused)}
             </button>
@@ -155,6 +174,8 @@
         </div>
 
         ${hasActiveProduct && (state.productSheetOpen || state.productSheetClosing) ? renderProductSheet(product) : ''}
+        ${state.cartConfirmationVisible ? renderCartConfirmation() : ''}
+        ${(state.cartViewOpen || state.cartViewClosing) ? renderCartView() : ''}
       </section>
     `
 
@@ -167,6 +188,10 @@
 
     if (state.productSheetOpening) {
       animateProductSheetIn()
+    }
+
+    if (state.cartViewOpening) {
+      animateCartViewIn()
     }
   }
 
@@ -352,6 +377,38 @@
       })
       token.dataset.bound = '1'
     })
+
+    const cartBtn = root.querySelector('.livepro-cart-btn')
+    if (cartBtn && cartBtn.dataset.bound !== '1') {
+      cartBtn.addEventListener('click', () => {
+        openCartView()
+      })
+      cartBtn.dataset.bound = '1'
+    }
+
+    const addToCartBtn = root.querySelector('.livepro-product-sheet__add-to-cart')
+    if (addToCartBtn && addToCartBtn.dataset.bound !== '1') {
+      addToCartBtn.addEventListener('click', () => {
+        if (addToCartBtn.disabled || state.addToCartLoading) {
+          return
+        }
+        const raw = product.raw || {}
+        const productId = Number(raw.product_id || 0)
+        const variationId = state.sheetSelectedVariationId || 0
+        if (productId > 0) {
+          addToCart(productId, variationId, 1)
+        }
+      })
+      addToCartBtn.dataset.bound = '1'
+    }
+
+    if (state.cartConfirmationVisible) {
+      bindCartConfirmationInteractions()
+    }
+
+    if (state.cartViewOpen || state.cartViewClosing) {
+      bindCartViewInteractions()
+    }
   }
 
   function renderProductDock(product) {
@@ -514,14 +571,348 @@
           </div>
         </div>
 
-        <div class="livepro-product-sheet__footer is-hidden" aria-hidden="true">
-          <button class="livepro-product-sheet__continue" type="button">
-            CONTINUAR
-            ${renderChevronIcon()}
-          </button>
+        <div class="livepro-product-sheet__footer">
+          ${renderSheetAddToCartCta(product)}
         </div>
       </div>
     `
+  }
+
+  function renderSheetAddToCartCta(product) {
+    const isVariable = product.variationMatrix.length > 0
+    const canAdd = !isVariable || Boolean(state.sheetSelectedVariationId)
+    const isLoading = state.addToCartLoading
+    const ctaDisabled = !canAdd || isLoading
+    const errorHtml = state.addToCartError
+      ? `<p class="livepro-product-sheet__add-error">${escapeHtml(state.addToCartError)}</p>`
+      : ''
+
+    return `
+      ${errorHtml}
+      <button
+        class="livepro-product-sheet__add-to-cart${ctaDisabled ? ' is-disabled' : ''}"
+        type="button"
+        ${ctaDisabled ? 'disabled' : ''}
+        style="background:${escapeAttribute(widgetCfg.colors.cartCtaBackground)};color:${escapeAttribute(widgetCfg.colors.cartCtaText)}"
+      >
+        ${isLoading ? renderSpinnerIcon() : escapeHtml(widgetCfg.labels.cartCta)}
+      </button>
+    `
+  }
+
+  function renderCartConfirmation() {
+    return `
+      <div class="livepro-cart-confirmation">
+        <div class="livepro-cart-confirmation__content">
+          <div class="livepro-cart-confirmation__message">
+            <span class="livepro-cart-confirmation__check">${renderCheckIcon()}</span>
+            <p class="livepro-cart-confirmation__title">Producto agregado al carrito</p>
+          </div>
+          <div class="livepro-cart-confirmation__actions">
+            <button class="livepro-cart-confirmation__continue" type="button" style="background:${escapeAttribute(widgetCfg.colors.continueBtnBackground)};color:${escapeAttribute(widgetCfg.colors.continueBtnText)};border-color:${escapeAttribute(widgetCfg.colors.continueBtnText)}">${escapeHtml(widgetCfg.labels.continueBtn)}</button>
+            <button class="livepro-cart-confirmation__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  function renderCartConfirmationInShell() {
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell || !state.cartConfirmationVisible) {
+      return
+    }
+
+    const existing = shell.querySelector('.livepro-cart-confirmation')
+    if (existing) {
+      existing.remove()
+    }
+
+    shell.insertAdjacentHTML('beforeend', renderCartConfirmation())
+    bindCartConfirmationInteractions()
+
+    window.requestAnimationFrame(() => {
+      const el = shell.querySelector('.livepro-cart-confirmation')
+      if (el) {
+        el.classList.add('is-open')
+      }
+    })
+  }
+
+  function bindCartConfirmationInteractions() {
+    const continueBtn = root.querySelector('.livepro-cart-confirmation__continue')
+    if (continueBtn && continueBtn.dataset.bound !== '1') {
+      continueBtn.addEventListener('click', () => {
+        dismissCartConfirmation()
+      })
+      continueBtn.dataset.bound = '1'
+    }
+
+    const checkoutBtn = root.querySelector('.livepro-cart-confirmation__checkout')
+    if (checkoutBtn && checkoutBtn.dataset.bound !== '1') {
+      checkoutBtn.addEventListener('click', () => {
+        state.cartConfirmationVisible = false
+        state.cartConfirmationItem = null
+        const overlay = root.querySelector('.livepro-cart-confirmation')
+        if (overlay) {
+          overlay.remove()
+        }
+        openCartView()
+      })
+      checkoutBtn.dataset.bound = '1'
+    }
+  }
+
+  function dismissCartConfirmation() {
+    state.cartConfirmationVisible = false
+    state.cartConfirmationItem = null
+    const overlay = root.querySelector('.livepro-cart-confirmation')
+    if (overlay) {
+      overlay.remove()
+    }
+  }
+
+  function renderCartView() {
+    const cart = state.cart
+    const isEmpty = !cart || !cart.items || cart.items.length === 0
+    const isLoading = state.cartLoading
+
+    return `
+      <div class="livepro-cart-view ${state.cartViewClosing ? 'is-closing' : (state.cartViewOpening ? '' : 'is-open')}" role="dialog" aria-modal="false" aria-label="Mi carrito">
+        <div class="livepro-cart-view__handle"></div>
+        <button class="livepro-cart-view__close" type="button" aria-label="Cerrar carrito">
+          ${renderSheetCloseIcon()}
+        </button>
+
+        <div class="livepro-cart-view__header">
+          <p class="livepro-cart-view__title">Mi carrito</p>
+        </div>
+
+        <div class="livepro-cart-view__body">
+          ${isLoading && isEmpty ? '<div class="livepro-cart-view__loading"><div class="livepro-spinner livepro-spinner--lg"></div></div>' : ''}
+          ${!isLoading && isEmpty ? renderCartEmpty() : ''}
+          ${!isEmpty ? renderCartItems(cart) : ''}
+        </div>
+
+        ${!isEmpty ? `
+          <div class="livepro-cart-view__footer">
+            <div class="livepro-cart-view__totals">
+              <div class="livepro-cart-view__total-row">
+                <span>Subtotal</span>
+                <span>${escapeHtml(cart.subtotal)}</span>
+              </div>
+              <div class="livepro-cart-view__total-row livepro-cart-view__total-row--total">
+                <span>Total</span>
+                <span>${escapeHtml(cart.total)}</span>
+              </div>
+            </div>
+            <button class="livepro-cart-view__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
+          </div>
+        ` : ''}
+      </div>
+    `
+  }
+
+  function renderCartEmpty() {
+    return `
+      <div class="livepro-cart-view__empty">
+        <p class="livepro-cart-view__empty-text">Tu carrito está vacío</p>
+        <button class="livepro-cart-view__back" type="button">Volver al live</button>
+      </div>
+    `
+  }
+
+  function renderCartItems(cart) {
+    return `
+      <div class="livepro-cart-view__items">
+        ${cart.items.map((item) => renderCartItem(item)).join('')}
+      </div>
+    `
+  }
+
+  function renderCartItem(item) {
+    const attrLines = item.attributes && typeof item.attributes === 'object'
+      ? Object.entries(item.attributes).map(([key, val]) => `<p class="livepro-cart-view__item-attr">${escapeHtml(key)}: ${escapeHtml(val)}</p>`).join('')
+      : ''
+
+    return `
+      <div class="livepro-cart-view__item" data-cart-key="${escapeAttribute(item.cart_item_key)}">
+        ${item.image ? `<img class="livepro-cart-view__item-image" src="${escapeAttribute(item.image)}" alt="" onerror="this.style.display='none'">` : '<div class="livepro-cart-view__item-image livepro-cart-view__item-image--empty"></div>'}
+        <div class="livepro-cart-view__item-info">
+          <div class="livepro-cart-view__item-top">
+            <div class="livepro-cart-view__item-meta">
+              <p class="livepro-cart-view__item-name">${escapeHtml(item.name)}</p>
+              ${attrLines}
+            </div>
+            <button class="livepro-cart-view__remove" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" aria-label="Eliminar ${escapeAttribute(item.name)}">
+              ${renderTrashIcon()}
+            </button>
+          </div>
+          <div class="livepro-cart-view__item-bottom">
+            <p class="livepro-cart-view__item-price">${escapeHtml(item.price)}</p>
+            <div class="livepro-cart-view__qty">
+              <button class="livepro-cart-view__qty-btn livepro-cart-view__qty-minus" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" data-qty="${item.quantity}" ${item.quantity <= 1 ? 'disabled' : ''}>−</button>
+              <span class="livepro-cart-view__qty-count">${item.quantity}</span>
+              <button class="livepro-cart-view__qty-btn livepro-cart-view__qty-plus" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" data-qty="${item.quantity}">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  function renderCartViewInShell() {
+    const shell = root.querySelector('.livepro-shell')
+    if (!shell) {
+      return false
+    }
+
+    const existing = shell.querySelector('.livepro-cart-view')
+    if (!state.cartViewOpen && !state.cartViewClosing) {
+      if (existing) {
+        existing.remove()
+      }
+      return true
+    }
+
+    if (existing) {
+      existing.outerHTML = renderCartView()
+    } else {
+      shell.insertAdjacentHTML('beforeend', renderCartView())
+    }
+
+    bindCartViewInteractions()
+    return true
+  }
+
+  function openCartView() {
+    if (state.cartViewOpen || state.cartViewOpening) {
+      return
+    }
+
+    if (state.productSheetOpen) {
+      closeProductSheet()
+    }
+
+    dismissCartConfirmation()
+
+    state.cartViewOpening = true
+    state.cartViewOpen = true
+
+    fetchCart().then(() => {
+      renderCartViewInShell()
+      animateCartViewIn()
+    })
+  }
+
+  function closeCartView() {
+    if (!state.cartViewOpen || state.cartViewClosing) {
+      return
+    }
+
+    const cartView = root.querySelector('.livepro-cart-view')
+    if (!cartView) {
+      state.cartViewOpen = false
+      state.cartViewOpening = false
+      state.cartViewClosing = false
+      return
+    }
+
+    state.cartViewOpening = false
+    state.cartViewClosing = true
+    cartView.classList.remove('is-open')
+    cartView.classList.add('is-closing')
+
+    window.setTimeout(() => {
+      state.cartViewOpen = false
+      state.cartViewClosing = false
+      if (cartView.parentNode) {
+        cartView.remove()
+      }
+    }, TRANSITION_DELTA_MS)
+  }
+
+  function animateCartViewIn() {
+    window.requestAnimationFrame(() => {
+      const cartView = root.querySelector('.livepro-cart-view')
+      if (cartView) {
+        cartView.classList.add('is-open')
+      }
+      state.cartViewOpening = false
+    })
+  }
+
+  function bindCartViewInteractions() {
+    const closeBtn = root.querySelector('.livepro-cart-view__close')
+    if (closeBtn && closeBtn.dataset.bound !== '1') {
+      closeBtn.addEventListener('click', () => {
+        closeCartView()
+      })
+      closeBtn.dataset.bound = '1'
+    }
+
+    const backBtn = root.querySelector('.livepro-cart-view__back')
+    if (backBtn && backBtn.dataset.bound !== '1') {
+      backBtn.addEventListener('click', () => {
+        closeCartView()
+      })
+      backBtn.dataset.bound = '1'
+    }
+
+    root.querySelectorAll('.livepro-cart-view__qty-minus').forEach((btn) => {
+      if (btn.dataset.bound === '1') {
+        return
+      }
+      btn.addEventListener('click', () => {
+        if (btn.disabled || state.cartLoading) {
+          return
+        }
+        const key = String(btn.dataset.cartKey || '')
+        const qty = Number(btn.dataset.qty || 1)
+        if (key && qty > 1) {
+          updateCartItem(key, qty - 1)
+        }
+      })
+      btn.dataset.bound = '1'
+    })
+
+    root.querySelectorAll('.livepro-cart-view__qty-plus').forEach((btn) => {
+      if (btn.dataset.bound === '1') {
+        return
+      }
+      btn.addEventListener('click', () => {
+        if (state.cartLoading) {
+          return
+        }
+        const key = String(btn.dataset.cartKey || '')
+        const qty = Number(btn.dataset.qty || 1)
+        if (key) {
+          updateCartItem(key, qty + 1)
+        }
+      })
+      btn.dataset.bound = '1'
+    })
+
+    root.querySelectorAll('.livepro-cart-view__remove').forEach((btn) => {
+      if (btn.dataset.bound === '1') {
+        return
+      }
+      btn.addEventListener('click', () => {
+        if (state.cartLoading) {
+          return
+        }
+        const key = String(btn.dataset.cartKey || '')
+        if (key) {
+          removeCartItem(key)
+        }
+      })
+      btn.dataset.bound = '1'
+    })
+
+    const checkoutBtn = root.querySelector('.livepro-cart-view__checkout')
+    if (checkoutBtn && checkoutBtn.dataset.bound !== '1') {
+      checkoutBtn.dataset.bound = '1'
+    }
   }
 
   function openShell() {
@@ -534,6 +925,7 @@
     state.shellOpening = true
     state.expanded = true
     render()
+    fetchCart().then(() => syncCartBadge())
   }
 
   function closeShell() {
@@ -551,6 +943,11 @@
       state.productSheetOpening = false
       state.productSheetClosing = false
       state.sheetProductSnapshot = null
+      state.cartConfirmationVisible = false
+      state.cartConfirmationItem = null
+      state.cartViewOpen = false
+      state.cartViewOpening = false
+      state.cartViewClosing = false
       clearSheetSelection()
       state.isPaused = !widgetCfg.autoplay
       render()
@@ -573,6 +970,11 @@
       state.productSheetOpening = false
       state.productSheetClosing = false
       state.sheetProductSnapshot = null
+      state.cartConfirmationVisible = false
+      state.cartConfirmationItem = null
+      state.cartViewOpen = false
+      state.cartViewOpening = false
+      state.cartViewClosing = false
       clearSheetSelection()
       state.isPaused = !widgetCfg.autoplay
       render()
@@ -1697,6 +2099,9 @@
         productCta: String(config.labels && config.labels.productCta ? config.labels.productCta : 'VER PRODUCTO'),
         productTag: String(config.labels && config.labels.productTag ? config.labels.productTag : 'DESTACADO'),
         liveBadge: String(config.labels && config.labels.liveBadge ? config.labels.liveBadge : 'VIVO'),
+        cartCta: String(config.labels && config.labels.cartCta ? config.labels.cartCta : 'AGREGAR AL CARRITO'),
+        continueBtn: String(config.labels && config.labels.continueBtn ? config.labels.continueBtn : 'SEGUIR VIENDO'),
+        checkoutBtn: String(config.labels && config.labels.checkoutBtn ? config.labels.checkoutBtn : 'TERMINAR COMPRA'),
       },
       colors: {
         productPrice: String(config.colors && config.colors.productPrice ? config.colors.productPrice : '#4f4bf0'),
@@ -1704,6 +2109,12 @@
         productTagBackground: String(config.colors && config.colors.productTagBackground ? config.colors.productTagBackground : '#eef2f8'),
         productCtaBackground: String(config.colors && config.colors.productCtaBackground ? config.colors.productCtaBackground : '#4f4bf0'),
         productCtaText: String(config.colors && config.colors.productCtaText ? config.colors.productCtaText : '#ffffff'),
+        cartCtaBackground: String(config.colors && config.colors.cartCtaBackground ? config.colors.cartCtaBackground : '#000000'),
+        cartCtaText: String(config.colors && config.colors.cartCtaText ? config.colors.cartCtaText : '#ffffff'),
+        continueBtnBackground: String(config.colors && config.colors.continueBtnBackground ? config.colors.continueBtnBackground : '#ffffff'),
+        continueBtnText: String(config.colors && config.colors.continueBtnText ? config.colors.continueBtnText : '#1e2d49'),
+        checkoutBtnBackground: String(config.colors && config.colors.checkoutBtnBackground ? config.colors.checkoutBtnBackground : '#1e2d49'),
+        checkoutBtnText: String(config.colors && config.colors.checkoutBtnText ? config.colors.checkoutBtnText : '#ffffff'),
       },
       indicators: {
         showLiveBadge: config.indicators ? config.indicators.showLiveBadge !== false : true,
@@ -1883,6 +2294,165 @@
 
     const variationId = Number(product.variation_id || 0)
     return `${productId}:${variationId}`
+  }
+
+  function getSheetProduct() {
+    const liveProduct = getLiveProductViewModel()
+    return getDisplayedProductViewModel(liveProduct)
+  }
+
+  async function fetchCart() {
+    if (!cfg.rest || !cfg.rest.cartGetUrl) {
+      return
+    }
+
+    state.cartLoading = true
+    state.cartError = null
+
+    try {
+      const response = await fetch(cfg.rest.cartGetUrl, {
+        method: 'GET',
+        headers: { 'X-WP-Nonce': cfg.nonce || '' },
+        credentials: 'same-origin',
+      })
+      const body = await response.json()
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Error al obtener carrito')
+      }
+      state.cart = body.cart
+    } catch (err) {
+      state.cartError = err.message
+    } finally {
+      state.cartLoading = false
+    }
+  }
+
+  async function addToCart(productId, variationId, quantity) {
+    if (!cfg.rest || !cfg.rest.cartAddUrl) {
+      return
+    }
+
+    state.addToCartLoading = true
+    state.addToCartError = null
+    renderProductSheetInShell(getSheetProduct())
+
+    try {
+      const response = await fetch(cfg.rest.cartAddUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': cfg.nonce || '',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          product_id: productId,
+          variation_id: variationId || 0,
+          quantity: quantity || 1,
+        }),
+      })
+      const body = await response.json()
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Error al agregar al carrito')
+      }
+      state.cart = body.cart
+      state.cartConfirmationItem = body.added_item
+      state.addToCartLoading = false
+      closeProductSheet()
+      state.cartConfirmationVisible = true
+      renderCartConfirmationInShell()
+      syncCartBadge()
+      return
+    } catch (err) {
+      state.addToCartError = err.message
+    } finally {
+      state.addToCartLoading = false
+      renderProductSheetInShell(getSheetProduct())
+      syncCartBadge()
+    }
+  }
+
+  async function updateCartItem(cartItemKey, quantity) {
+    if (!cfg.rest || !cfg.rest.cartUpdateUrl) {
+      return
+    }
+
+    state.cartLoading = true
+
+    try {
+      const response = await fetch(cfg.rest.cartUpdateUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': cfg.nonce || '',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          cart_item_key: cartItemKey,
+          quantity: quantity,
+        }),
+      })
+      const body = await response.json()
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Error al actualizar carrito')
+      }
+      state.cart = body.cart
+    } catch (err) {
+      state.cartError = err.message
+    } finally {
+      state.cartLoading = false
+      renderCartViewInShell()
+      syncCartBadge()
+    }
+  }
+
+  async function removeCartItem(cartItemKey) {
+    if (!cfg.rest || !cfg.rest.cartRemoveUrl) {
+      return
+    }
+
+    state.cartLoading = true
+
+    try {
+      const response = await fetch(cfg.rest.cartRemoveUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': cfg.nonce || '',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          cart_item_key: cartItemKey,
+        }),
+      })
+      const body = await response.json()
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Error al eliminar del carrito')
+      }
+      state.cart = body.cart
+    } catch (err) {
+      state.cartError = err.message
+    } finally {
+      state.cartLoading = false
+      renderCartViewInShell()
+      syncCartBadge()
+    }
+  }
+
+  function syncCartBadge() {
+    const count = state.cart ? state.cart.item_count : 0
+    const headerBadge = root.querySelector('.livepro-cart-badge__count')
+    if (headerBadge) {
+      headerBadge.textContent = String(count)
+      const badge = headerBadge.closest('.livepro-cart-badge')
+      if (badge) {
+        badge.classList.toggle('is-hidden', count === 0)
+      }
+    }
+    const miniBadge = root.querySelector('.livepro-mini__cart-badge')
+    if (miniBadge) {
+      miniBadge.textContent = String(count)
+      miniBadge.classList.toggle('is-hidden', count === 0)
+    }
   }
 
   function buildEmbedUrl(videoId, autoplay, muted) {
@@ -2361,6 +2931,45 @@
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <path d="M6 6L14 14"></path>
         <path d="M14 6L6 14"></path>
+      </svg>
+    `
+  }
+
+  function renderCartIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"></path>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <path d="M16 10a4 4 0 01-8 0"></path>
+      </svg>
+    `
+  }
+
+  function renderSpinnerIcon() {
+    return `
+      <svg class="livepro-spinner" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"></circle>
+      </svg>
+    `
+  }
+
+  function renderCheckIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="11" fill="#22c55e" stroke="none"></circle>
+        <path d="M7 12.5L10.5 16L17 9" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    `
+  }
+
+  function renderTrashIcon() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"></path>
+        <path d="M10 11v6"></path>
+        <path d="M14 11v6"></path>
+        <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"></path>
       </svg>
     `
   }

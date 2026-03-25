@@ -59,6 +59,15 @@ final class SettingsRepository
             'widget_product_data_strategy' => in_array((string) ($input['widget_product_data_strategy'] ?? ''), ['livepro_only', 'livepro_with_fallback'], true)
                 ? (string) $input['widget_product_data_strategy']
                 : 'livepro_with_fallback',
+            'widget_cart_cta_label' => sanitize_text_field((string) ($input['widget_cart_cta_label'] ?? 'AGREGAR AL CARRITO')),
+            'widget_cart_cta_background_color' => $this->sanitizeHexColor($input['widget_cart_cta_background_color'] ?? '#000000', '#000000'),
+            'widget_cart_cta_text_color' => $this->sanitizeHexColor($input['widget_cart_cta_text_color'] ?? '#ffffff', '#ffffff'),
+            'widget_continue_btn_label' => sanitize_text_field((string) ($input['widget_continue_btn_label'] ?? 'SEGUIR VIENDO')),
+            'widget_continue_btn_background_color' => $this->sanitizeHexColor($input['widget_continue_btn_background_color'] ?? '#ffffff', '#ffffff'),
+            'widget_continue_btn_text_color' => $this->sanitizeHexColor($input['widget_continue_btn_text_color'] ?? '#1e2d49', '#1e2d49'),
+            'widget_checkout_btn_label' => sanitize_text_field((string) ($input['widget_checkout_btn_label'] ?? 'TERMINAR COMPRA')),
+            'widget_checkout_btn_background_color' => $this->sanitizeHexColor($input['widget_checkout_btn_background_color'] ?? '#1e2d49', '#1e2d49'),
+            'widget_checkout_btn_text_color' => $this->sanitizeHexColor($input['widget_checkout_btn_text_color'] ?? '#ffffff', '#ffffff'),
         ];
     }
 
@@ -100,6 +109,15 @@ final class SettingsRepository
             'widget_show_live_badge' => 1,
             'widget_show_viewers' => 1,
             'widget_product_data_strategy' => 'livepro_with_fallback',
+            'widget_cart_cta_label' => 'AGREGAR AL CARRITO',
+            'widget_cart_cta_background_color' => '#000000',
+            'widget_cart_cta_text_color' => '#ffffff',
+            'widget_continue_btn_label' => 'SEGUIR VIENDO',
+            'widget_continue_btn_background_color' => '#ffffff',
+            'widget_continue_btn_text_color' => '#1e2d49',
+            'widget_checkout_btn_label' => 'TERMINAR COMPRA',
+            'widget_checkout_btn_background_color' => '#1e2d49',
+            'widget_checkout_btn_text_color' => '#ffffff',
         ];
     }
 

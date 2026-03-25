@@ -53,10 +53,15 @@ final class WidgetAssets
             'backofficeUrl' => esc_url_raw((string) $settings['backoffice_url']),
             'storeId' => (string) $settings['store_id'],
             'pollMs' => 5000,
+            'nonce' => wp_create_nonce('wp_rest'),
             'previewImageUrl' => esc_url_raw((string) ($settings['preview_image_url'] ?? '')),
             'previewViewers' => (string) ($settings['preview_viewers'] ?? ''),
             'rest' => [
                 'productViewUrl' => esc_url_raw(rest_url('livepro/v1/product-view')),
+                'cartGetUrl' => esc_url_raw(rest_url('livepro/v1/cart')),
+                'cartAddUrl' => esc_url_raw(rest_url('livepro/v1/cart/add')),
+                'cartUpdateUrl' => esc_url_raw(rest_url('livepro/v1/cart/update')),
+                'cartRemoveUrl' => esc_url_raw(rest_url('livepro/v1/cart/remove')),
             ],
             'widget' => [
                 'widthDesktop' => (int) ($settings['widget_width_desktop'] ?? 392),
@@ -80,6 +85,9 @@ final class WidgetAssets
                     'productCta' => (string) ($settings['widget_product_cta_label'] ?? 'VER PRODUCTO'),
                     'productTag' => (string) ($settings['widget_product_tag_label'] ?? 'DESTACADO'),
                     'liveBadge' => (string) ($settings['widget_live_badge_label'] ?? 'VIVO'),
+                    'cartCta' => (string) ($settings['widget_cart_cta_label'] ?? 'AGREGAR AL CARRITO'),
+                    'continueBtn' => (string) ($settings['widget_continue_btn_label'] ?? 'SEGUIR VIENDO'),
+                    'checkoutBtn' => (string) ($settings['widget_checkout_btn_label'] ?? 'TERMINAR COMPRA'),
                 ],
                 'colors' => [
                     'productPrice' => (string) ($settings['widget_product_price_color'] ?? '#4f4bf0'),
@@ -87,6 +95,12 @@ final class WidgetAssets
                     'productTagBackground' => (string) ($settings['widget_product_tag_background_color'] ?? '#eef2f8'),
                     'productCtaBackground' => (string) ($settings['widget_product_cta_background_color'] ?? '#4f4bf0'),
                     'productCtaText' => (string) ($settings['widget_product_cta_text_color'] ?? '#ffffff'),
+                    'cartCtaBackground' => (string) ($settings['widget_cart_cta_background_color'] ?? '#000000'),
+                    'cartCtaText' => (string) ($settings['widget_cart_cta_text_color'] ?? '#ffffff'),
+                    'continueBtnBackground' => (string) ($settings['widget_continue_btn_background_color'] ?? '#ffffff'),
+                    'continueBtnText' => (string) ($settings['widget_continue_btn_text_color'] ?? '#1e2d49'),
+                    'checkoutBtnBackground' => (string) ($settings['widget_checkout_btn_background_color'] ?? '#1e2d49'),
+                    'checkoutBtnText' => (string) ($settings['widget_checkout_btn_text_color'] ?? '#ffffff'),
                 ],
                 'indicators' => [
                     'showLiveBadge' => !empty($settings['widget_show_live_badge']),

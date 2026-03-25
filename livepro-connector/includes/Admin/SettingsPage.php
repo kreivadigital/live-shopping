@@ -300,7 +300,7 @@ final class SettingsPage
             [
                 'title' => 'Apariencia de producto',
                 'description' => 'Personaliza los colores del precio y del CTA del dock de producto.',
-                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_tag_background_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color'],
+                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_tag_background_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color', 'widget_cart_cta_label', 'widget_cart_cta_background_color', 'widget_cart_cta_text_color', 'widget_continue_btn_label', 'widget_continue_btn_background_color', 'widget_continue_btn_text_color', 'widget_checkout_btn_label', 'widget_checkout_btn_background_color', 'widget_checkout_btn_text_color'],
             ],
             [
                 'title' => 'Layout del widget',
@@ -408,6 +408,51 @@ final class SettingsPage
                 'label' => 'Texto CTA producto',
                 'type' => 'color',
                 'description' => 'Color del texto e icono del botón livepro-product-dock__cta.',
+            ],
+            'widget_cart_cta_label' => [
+                'label' => 'CTA agregar al carrito',
+                'type' => 'text',
+                'description' => 'Texto del botón de agregar al carrito en el sheet de producto.',
+            ],
+            'widget_cart_cta_background_color' => [
+                'label' => 'Fondo CTA carrito',
+                'type' => 'color',
+                'description' => 'Color de fondo del botón agregar al carrito.',
+            ],
+            'widget_cart_cta_text_color' => [
+                'label' => 'Texto CTA carrito',
+                'type' => 'color',
+                'description' => 'Color del texto del botón agregar al carrito.',
+            ],
+            'widget_continue_btn_label' => [
+                'label' => 'Botón seguir viendo',
+                'type' => 'text',
+                'description' => 'Texto del botón "Seguir viendo" en la confirmación de carrito.',
+            ],
+            'widget_continue_btn_background_color' => [
+                'label' => 'Fondo seguir viendo',
+                'type' => 'color',
+                'description' => 'Color de fondo del botón "Seguir viendo".',
+            ],
+            'widget_continue_btn_text_color' => [
+                'label' => 'Texto seguir viendo',
+                'type' => 'color',
+                'description' => 'Color del texto del botón "Seguir viendo".',
+            ],
+            'widget_checkout_btn_label' => [
+                'label' => 'Botón terminar compra',
+                'type' => 'text',
+                'description' => 'Texto del botón "Terminar compra" en confirmación y carrito.',
+            ],
+            'widget_checkout_btn_background_color' => [
+                'label' => 'Fondo terminar compra',
+                'type' => 'color',
+                'description' => 'Color de fondo del botón "Terminar compra".',
+            ],
+            'widget_checkout_btn_text_color' => [
+                'label' => 'Texto terminar compra',
+                'type' => 'color',
+                'description' => 'Color del texto del botón "Terminar compra".',
             ],
             'widget_product_data_strategy' => [
                 'label' => 'Estrategia de datos',
