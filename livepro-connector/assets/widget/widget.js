@@ -1496,9 +1496,7 @@
 
     patchDock(product)
 
-    if (sheetVisible) {
-      renderProductSheetInShell(product)
-    } else if (existingSheet) {
+    if (!sheetVisible && existingSheet) {
       existingSheet.remove()
     }
 
