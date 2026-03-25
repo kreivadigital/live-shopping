@@ -125,10 +125,12 @@
             class="livepro-shell__iframe"
             src="${escapeAttribute(buildEmbedUrl(videoId, widgetCfg.autoplay, state.isMuted))}"
             title="Live Shopping"
+            tabindex="-1"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
           ></iframe>
           <span class="livepro-shell__scrim"></span>
+          <span class="livepro-shell__interaction-blocker" aria-hidden="true"></span>
         </div>
 
         <div class="livepro-shell__topbar">
@@ -1406,7 +1408,9 @@
     state.live = normalized.live
     state.liveRevision = normalized.revision
     state.liveSessionKey = normalized.sessionKey
-    state.liveItems = mergeLiveItems(state.liveItems, normalized.items)
+    state.liveItems = normalized.items.length === 0 && !normalized.live.active_item_key && !normalized.product
+      ? []
+      : mergeLiveItems(state.liveItems, normalized.items)
 
     const newestIncomingKey = normalized.items
       .filter((item) => item && item.key && !previousItemKeys.has(String(item.key)))
@@ -1466,6 +1470,7 @@
     return {
       live,
       items,
+      product: normalizeLiveItem(payload && payload.product),
       revision: payload && payload.revision ? Number(payload.revision) : 0,
       sessionKey: payload && payload.live_session_key ? String(payload.live_session_key) : '',
     }
@@ -1888,7 +1893,10 @@
       origin: window.location.origin,
       playsinline: '1',
       rel: '0',
-      controls: '1',
+      controls: '0',
+      disablekb: '1',
+      fs: '0',
+      iv_load_policy: '3',
       modestbranding: '1',
     })
 

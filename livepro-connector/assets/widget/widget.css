@@ -83,6 +83,15 @@
   pointer-events: none;
 }
 
+.livepro-shell__interaction-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  background: transparent;
+  pointer-events: auto;
+}
+
 .livepro-mini__top,
 .livepro-shell__topbar {
   position: absolute;

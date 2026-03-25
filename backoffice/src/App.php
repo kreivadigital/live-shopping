@@ -2425,7 +2425,6 @@ final class App
     {
         $session = $this->findLiveSession($storeId);
         $publicSessionKey = trim((string) ($session['public_session_key'] ?? ''));
-
         if ($publicSessionKey !== '') {
             $stmt = $this->db->prepare(
                 'DELETE FROM live_emission_queue
@@ -2436,26 +2435,30 @@ final class App
                 ':store_id' => $storeId,
                 ':session_key' => $publicSessionKey,
             ]);
-
-            $resetStmt = $this->db->prepare(
-                'UPDATE live_sessions
-                 SET public_session_key = :public_session_key,
-                     session_revision = 0,
-                     updated_at = CURRENT_TIMESTAMP
+        } else {
+            $stmt = $this->db->prepare(
+                'DELETE FROM live_emission_queue
                  WHERE store_id = :store_id'
             );
-            $resetStmt->execute([
-                ':public_session_key' => $this->generatePublicLiveSessionKey(),
-                ':store_id' => $storeId,
-            ]);
-            return;
+            $stmt->execute([':store_id' => $storeId]);
         }
 
-        $stmt = $this->db->prepare(
-            'DELETE FROM live_emission_queue
+        $resetStmt = $this->db->prepare(
+            'UPDATE live_sessions
+             SET public_session_key = COALESCE(:public_session_key, public_session_key),
+                 session_revision = 0,
+                 active_product_id = NULL,
+                 active_variation_id = NULL,
+                 active_product_name = NULL,
+                 active_price = NULL,
+                 active_image = NULL,
+                 updated_at = CURRENT_TIMESTAMP
              WHERE store_id = :store_id'
         );
-        $stmt->execute([':store_id' => $storeId]);
+        $resetStmt->execute([
+            ':public_session_key' => $publicSessionKey !== '' ? $this->generatePublicLiveSessionKey() : null,
+            ':store_id' => $storeId,
+        ]);
     }
 
     /**
