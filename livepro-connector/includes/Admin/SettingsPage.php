@@ -300,7 +300,7 @@ final class SettingsPage
             [
                 'title' => 'Apariencia de producto',
                 'description' => 'Personaliza los colores del precio y del CTA del dock de producto.',
-                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_tag_background_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color', 'widget_cart_cta_label', 'widget_cart_cta_background_color', 'widget_cart_cta_text_color', 'widget_continue_btn_label', 'widget_continue_btn_background_color', 'widget_continue_btn_text_color', 'widget_checkout_btn_label', 'widget_checkout_btn_background_color', 'widget_checkout_btn_text_color'],
+                'fields' => ['widget_product_price_color', 'widget_product_tag_color', 'widget_product_tag_background_color', 'widget_product_cta_background_color', 'widget_product_cta_text_color', 'widget_cart_icon_background_color', 'widget_cart_icon_color', 'widget_cart_cta_label', 'widget_cart_cta_background_color', 'widget_cart_cta_text_color', 'widget_continue_btn_label', 'widget_continue_btn_background_color', 'widget_continue_btn_text_color', 'widget_checkout_btn_label', 'widget_checkout_btn_background_color', 'widget_checkout_btn_text_color'],
             ],
             [
                 'title' => 'Layout del widget',
@@ -453,6 +453,16 @@ final class SettingsPage
                 'label' => 'Texto terminar compra',
                 'type' => 'color',
                 'description' => 'Color del texto del botón "Terminar compra".',
+            ],
+            'widget_cart_icon_background_color' => [
+                'label' => 'Fondo ícono carrito',
+                'type' => 'color',
+                'description' => 'Color de fondo del botón de carrito en el header del widget.',
+            ],
+            'widget_cart_icon_color' => [
+                'label' => 'Color ícono carrito',
+                'type' => 'color',
+                'description' => 'Color del ícono de carrito en el header del widget.',
             ],
             'widget_product_data_strategy' => [
                 'label' => 'Estrategia de datos',

@@ -97,6 +97,8 @@ final class WidgetAssets
                     'productCtaText' => (string) ($settings['widget_product_cta_text_color'] ?? '#ffffff'),
                     'cartCtaBackground' => (string) ($settings['widget_cart_cta_background_color'] ?? '#000000'),
                     'cartCtaText' => (string) ($settings['widget_cart_cta_text_color'] ?? '#ffffff'),
+                    'cartIconBackground' => (string) ($settings['widget_cart_icon_background_color'] ?? '#ffffff'),
+                    'cartIconColor' => (string) ($settings['widget_cart_icon_color'] ?? '#1e2d49'),
                     'continueBtnBackground' => (string) ($settings['widget_continue_btn_background_color'] ?? '#ffffff'),
                     'continueBtnText' => (string) ($settings['widget_continue_btn_text_color'] ?? '#1e2d49'),
                     'checkoutBtnBackground' => (string) ($settings['widget_checkout_btn_background_color'] ?? '#1e2d49'),

@@ -6,7 +6,8 @@
   const cfg = window.LiveProWidgetConfig
   const widgetCfg = normalizeWidgetConfig(cfg.widget || {})
   const storeId = Number(cfg.storeId || 0)
-  const TRANSITION_DELTA_MS = 1000
+  const TRANSITION_DELTA_MS = 600
+  let dockPositionRaf = 0
 
   if (!storeId || !cfg.backofficeUrl) {
     return
@@ -50,12 +51,29 @@
     cartLoading: false,
     cartError: null,
     addToCartLoading: false,
-    addToCartError: null,
   }
 
   const root = document.createElement('div')
   root.id = 'livepro-widget-root'
   document.body.appendChild(root)
+
+  const templateEl = document.createElement('template')
+  function htmlToFragment(html) {
+    templateEl.innerHTML = html
+    return templateEl.content
+  }
+  function replaceContent(container, html) {
+    container.replaceChildren(htmlToFragment(html))
+  }
+  function replaceNode(oldNode, html) {
+    const fragment = htmlToFragment(html)
+    const newNode = fragment.firstElementChild || fragment.firstChild
+    oldNode.parentNode.replaceChild(newNode, oldNode)
+  }
+  function appendContent(container, html) {
+    container.appendChild(htmlToFragment(html))
+  }
+
   applyLayoutConfig()
 
   function render() {
@@ -63,7 +81,7 @@
 
     if (!state.live || !state.live.is_live) {
       root.className = ''
-      root.innerHTML = ''
+      root.replaceChildren()
       state.liveItems = []
       state.liveRevision = 0
       state.liveSessionKey = ''
@@ -99,9 +117,7 @@
     const viewers = getViewerLabel()
     const pills = renderStatusPills(viewers, 'mini')
 
-    const cartCount = state.cart ? state.cart.item_count : 0
-
-    root.innerHTML = `
+    replaceContent(root, `
       <button class="livepro-mini" type="button" aria-label="Abrir live shopping">
         ${previewImage ? `<img class="livepro-mini__bg" src="${escapeAttribute(previewImage)}" alt="Preview live">` : ''}
         <span class="livepro-mini__overlay"></span>
@@ -110,9 +126,8 @@
           <span class="livepro-mini__play">${renderPlayIcon()}</span>
           <span class="livepro-mini__cta">${escapeHtml(widgetCfg.labels.previewCta)}</span>
         </span>
-        <span class="livepro-mini__cart-badge${cartCount === 0 ? ' is-hidden' : ''}">${cartCount}</span>
       </button>
-    `
+    `)
 
     root.querySelector('.livepro-mini').addEventListener('click', () => {
       openShell()
@@ -131,7 +146,7 @@
     state.mountedVideoId = videoId
     state.lastProductSignature = productSignature(product.raw)
 
-    root.innerHTML = `
+    replaceContent(root, `
       <section class="livepro-shell ${state.shellClosing ? 'is-closing' : (state.shellOpening ? '' : 'is-open')}" aria-label="Live shopping">
         <div class="livepro-shell__media">
           <iframe
@@ -151,7 +166,7 @@
             ${renderStatusPills(viewers, 'panel')}
           </div>
           <div class="livepro-shell__actions">
-            <button class="livepro-icon-btn livepro-cart-btn" type="button" aria-label="Ver carrito">
+            <button class="livepro-icon-btn livepro-cart-btn" type="button" aria-label="Ver carrito" style="background:${escapeAttribute(widgetCfg.colors.cartIconBackground)};color:${escapeAttribute(widgetCfg.colors.cartIconColor)}">
               ${renderCartIcon()}
               <span class="livepro-cart-badge${(!state.cart || state.cart.item_count === 0) ? ' is-hidden' : ''}">
                 <span class="livepro-cart-badge__count">${state.cart ? state.cart.item_count : 0}</span>
@@ -177,7 +192,7 @@
         ${state.cartConfirmationVisible ? renderCartConfirmation() : ''}
         ${(state.cartViewOpen || state.cartViewClosing) ? renderCartView() : ''}
       </section>
-    `
+    `)
 
     bindExpandedInteractions(product)
     syncDockTrackPosition(false)
@@ -350,6 +365,53 @@
       dot.dataset.bound = '1'
     })
 
+    const galleryViewport = root.querySelector('.livepro-gallery__viewport')
+    if (galleryViewport && galleryViewport.dataset.bound !== '1') {
+      let galTouchStartX = 0
+      let galTouchStartY = 0
+      let galSwiping = false
+
+      galleryViewport.addEventListener('touchstart', (e) => {
+        galTouchStartX = e.touches[0].clientX
+        galTouchStartY = e.touches[0].clientY
+        galSwiping = false
+      }, { passive: true })
+
+      galleryViewport.addEventListener('touchmove', (e) => {
+        if (galSwiping) {
+          return
+        }
+        const dx = Math.abs(e.touches[0].clientX - galTouchStartX)
+        const dy = Math.abs(e.touches[0].clientY - galTouchStartY)
+        if (dx > dy && dx > 10) {
+          galSwiping = true
+          e.preventDefault()
+        }
+      }, { passive: false })
+
+      galleryViewport.addEventListener('touchend', (e) => {
+        if (!galSwiping) {
+          return
+        }
+        const diff = e.changedTouches[0].clientX - galTouchStartX
+        if (Math.abs(diff) < 30) {
+          return
+        }
+        const galleryLen = product.gallery.length
+        if (galleryLen <= 1) {
+          return
+        }
+        if (diff < 0) {
+          state.activePhotoIndex = state.activePhotoIndex >= galleryLen - 1 ? 0 : state.activePhotoIndex + 1
+        } else {
+          state.activePhotoIndex = state.activePhotoIndex <= 0 ? galleryLen - 1 : state.activePhotoIndex - 1
+        }
+        renderProductSheetInShell(product)
+      }, { passive: true })
+
+      galleryViewport.dataset.bound = '1'
+    }
+
     root.querySelectorAll('.livepro-info-token--option').forEach((token) => {
       if (token.dataset.bound === '1') {
         return
@@ -439,7 +501,7 @@
     const isCollapsed = state.dockCollapsed
     const closeSlot = !isCollapsed
       ? `
-        <button class="livepro-product-dock__close" type="button" aria-label="Colapsar dock">
+        <button class="livepro-btn-close livepro-product-dock__close" type="button" aria-label="Colapsar dock">
           ${renderDockCloseIcon()}
         </button>
       `
@@ -518,8 +580,7 @@
 
     return `
       <div class="livepro-product-sheet ${state.productSheetClosing ? 'is-closing' : (state.productSheetOpening ? '' : 'is-open')}" role="dialog" aria-modal="false" aria-label="Detalle de producto">
-        <div class="livepro-product-sheet__handle"></div>
-        <button class="livepro-product-sheet__close" type="button" aria-label="Cerrar detalle de producto">
+        <button class="livepro-btn-close livepro-product-sheet__close" type="button" aria-label="Cerrar detalle de producto">
           ${renderSheetCloseIcon()}
         </button>
 
@@ -583,14 +644,9 @@
     const canAdd = !isVariable || Boolean(state.sheetSelectedVariationId)
     const isLoading = state.addToCartLoading
     const ctaDisabled = !canAdd || isLoading
-    const errorHtml = state.addToCartError
-      ? `<p class="livepro-product-sheet__add-error">${escapeHtml(state.addToCartError)}</p>`
-      : ''
-
     return `
-      ${errorHtml}
       <button
-        class="livepro-product-sheet__add-to-cart${ctaDisabled ? ' is-disabled' : ''}"
+        class="livepro-btn-cta livepro-product-sheet__add-to-cart${ctaDisabled ? ' is-disabled' : ''}"
         type="button"
         ${ctaDisabled ? 'disabled' : ''}
         style="background:${escapeAttribute(widgetCfg.colors.cartCtaBackground)};color:${escapeAttribute(widgetCfg.colors.cartCtaText)}"
@@ -609,8 +665,8 @@
             <p class="livepro-cart-confirmation__title">Producto agregado al carrito</p>
           </div>
           <div class="livepro-cart-confirmation__actions">
-            <button class="livepro-cart-confirmation__continue" type="button" style="background:${escapeAttribute(widgetCfg.colors.continueBtnBackground)};color:${escapeAttribute(widgetCfg.colors.continueBtnText)};border-color:${escapeAttribute(widgetCfg.colors.continueBtnText)}">${escapeHtml(widgetCfg.labels.continueBtn)}</button>
-            <button class="livepro-cart-confirmation__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
+            <button class="livepro-btn-cta livepro-cart-confirmation__continue" type="button" style="background:${escapeAttribute(widgetCfg.colors.continueBtnBackground)};color:${escapeAttribute(widgetCfg.colors.continueBtnText)};border-color:${escapeAttribute(widgetCfg.colors.continueBtnText)}">${escapeHtml(widgetCfg.labels.continueBtn)}</button>
+            <button class="livepro-btn-cta livepro-cart-confirmation__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
           </div>
         </div>
       </div>
@@ -628,7 +684,7 @@
       existing.remove()
     }
 
-    shell.insertAdjacentHTML('beforeend', renderCartConfirmation())
+    appendContent(shell, renderCartConfirmation())
     bindCartConfirmationInteractions()
 
     window.requestAnimationFrame(() => {
@@ -679,8 +735,7 @@
 
     return `
       <div class="livepro-cart-view ${state.cartViewClosing ? 'is-closing' : (state.cartViewOpening ? '' : 'is-open')}" role="dialog" aria-modal="false" aria-label="Mi carrito">
-        <div class="livepro-cart-view__handle"></div>
-        <button class="livepro-cart-view__close" type="button" aria-label="Cerrar carrito">
+        <button class="livepro-btn-close livepro-cart-view__close" type="button" aria-label="Cerrar carrito">
           ${renderSheetCloseIcon()}
         </button>
 
@@ -706,7 +761,7 @@
                 <span>${escapeHtml(cart.total)}</span>
               </div>
             </div>
-            <button class="livepro-cart-view__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
+            <button class="livepro-btn-cta livepro-cart-view__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
           </div>
         ` : ''}
       </div>
@@ -753,7 +808,7 @@
             <div class="livepro-cart-view__qty">
               <button class="livepro-cart-view__qty-btn livepro-cart-view__qty-minus" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" data-qty="${item.quantity}" ${item.quantity <= 1 ? 'disabled' : ''}>−</button>
               <span class="livepro-cart-view__qty-count">${item.quantity}</span>
-              <button class="livepro-cart-view__qty-btn livepro-cart-view__qty-plus" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" data-qty="${item.quantity}">+</button>
+              <button class="livepro-cart-view__qty-btn livepro-cart-view__qty-plus" type="button" data-cart-key="${escapeAttribute(item.cart_item_key)}" data-qty="${item.quantity}" data-stock="${item.manages_stock && item.stock_quantity != null ? item.stock_quantity : ''}" ${item.manages_stock && item.stock_quantity != null && item.quantity >= item.stock_quantity ? 'disabled' : ''}>+</button>
             </div>
           </div>
         </div>
@@ -776,9 +831,9 @@
     }
 
     if (existing) {
-      existing.outerHTML = renderCartView()
+      replaceNode(existing, renderCartView())
     } else {
-      shell.insertAdjacentHTML('beforeend', renderCartView())
+      appendContent(shell, renderCartView())
     }
 
     bindCartViewInteractions()
@@ -881,12 +936,13 @@
         return
       }
       btn.addEventListener('click', () => {
-        if (state.cartLoading) {
+        if (btn.disabled || state.cartLoading) {
           return
         }
         const key = String(btn.dataset.cartKey || '')
         const qty = Number(btn.dataset.qty || 1)
-        if (key) {
+        const stock = btn.dataset.stock !== '' ? Number(btn.dataset.stock) : null
+        if (key && (stock === null || qty < stock)) {
           updateCartItem(key, qty + 1)
         }
       })
@@ -1066,7 +1122,12 @@
     }
 
     window.requestAnimationFrame(() => {
-      sheet.classList.add('is-open')
+      const currentSheet = root.querySelector('.livepro-product-sheet')
+      if (!currentSheet) {
+        state.productSheetOpening = false
+        return
+      }
+      currentSheet.classList.add('is-open')
       window.setTimeout(() => {
         state.productSheetOpening = false
       }, TRANSITION_DELTA_MS)
@@ -1344,6 +1405,70 @@
     return normalizeKey(left || '') === normalizeKey(right || '')
   }
 
+  function patchDock(product) {
+    const dockHost = root.querySelector('.livepro-shell__dock-host')
+    if (!dockHost) {
+      return
+    }
+
+    const hasActiveProduct = Boolean(product.key)
+    const existingDock = dockHost.querySelector('.livepro-product-dock')
+
+    if (!hasActiveProduct) {
+      dockHost.replaceChildren()
+      return
+    }
+
+    if (!existingDock) {
+      replaceContent(dockHost, renderProductDock(product))
+      return
+    }
+
+    const track = existingDock.querySelector('.livepro-product-dock__track')
+    const wasCollapsed = existingDock.classList.contains('livepro-product-dock--collapsed')
+
+    if (!track || wasCollapsed !== state.dockCollapsed) {
+      replaceContent(dockHost, renderProductDock(product))
+      return
+    }
+
+    const activeKey = String(product.key)
+    const latestKey = getLiveActiveProductKey()
+    const items = state.dockCollapsed
+      ? [getLiveProductByKey(activeKey)].filter((i) => i && i.key)
+      : getDockItems()
+
+    const existingSlideKeys = []
+    track.querySelectorAll('.livepro-product-dock__slide').forEach((s) => {
+      existingSlideKeys.push(s.dataset.productKey)
+    })
+    const expectedKeys = items.map((i) => String(i.key))
+
+    const sameSlides = expectedKeys.length === existingSlideKeys.length
+      && expectedKeys.every((k, i) => k === existingSlideKeys[i])
+
+    if (!sameSlides) {
+      replaceContent(track, items.map((item) => renderProductDockSlide(item, activeKey, latestKey)).join(''))
+      existingDock.className = `livepro-product-dock livepro-product-dock--count-${items.length}${state.dockCollapsed ? ' livepro-product-dock--collapsed' : ''}`
+      return
+    }
+
+    track.querySelectorAll('.livepro-product-dock__slide').forEach((slide) => {
+      const key = slide.dataset.productKey
+      const isActive = key === activeKey
+
+      slide.classList.toggle('is-active', isActive)
+      slide.classList.toggle('is-inactive', !isActive)
+      slide.dataset.active = isActive ? '1' : '0'
+
+      const card = slide.querySelector('.livepro-product-dock__card')
+      if (card) {
+        card.classList.toggle('livepro-product-dock__card--active', isActive)
+        card.classList.toggle('livepro-product-dock__card--peek', !isActive)
+      }
+    })
+  }
+
   function updateExpandedShell() {
     if (!state.expanded) {
       return false
@@ -1357,8 +1482,6 @@
     const liveProduct = getLiveProductViewModel()
     const product = getDisplayedProductViewModel(liveProduct)
     const viewers = getViewerLabel()
-    const hasActiveProduct = Boolean(product.key)
-    const dockHost = shell.querySelector('.livepro-shell__dock-host')
     const statusHost = shell.querySelector('.livepro-shell__status')
     const nextSignature = productSignature(product.raw)
     const productChanged = nextSignature !== state.lastProductSignature
@@ -1368,12 +1491,10 @@
     syncProductState(product)
 
     if (statusHost) {
-      statusHost.innerHTML = renderStatusPills(viewers, 'panel')
+      replaceContent(statusHost, renderStatusPills(viewers, 'panel'))
     }
 
-    if (dockHost) {
-      dockHost.innerHTML = hasActiveProduct ? renderProductDock(product) : ''
-    }
+    patchDock(product)
 
     if (sheetVisible) {
       renderProductSheetInShell(product)
@@ -1546,6 +1667,11 @@
   }
 
   function syncDockTrackPosition(animate, targetSlide) {
+    if (dockPositionRaf) {
+      window.cancelAnimationFrame(dockPositionRaf)
+      dockPositionRaf = 0
+    }
+
     const viewport = root.querySelector('.livepro-product-dock__viewport')
     const track = root.querySelector('.livepro-product-dock__track')
     if (!viewport || !track) {
@@ -1557,8 +1683,9 @@
       track.style.transform = 'translate3d(0, 0, 0)'
 
       if (!animate) {
-        window.requestAnimationFrame(() => {
+        dockPositionRaf = window.requestAnimationFrame(() => {
           track.style.transition = ''
+          dockPositionRaf = 0
         })
       }
       return
@@ -1599,8 +1726,9 @@
       track.style.transform = `translate3d(${clamp(desiredTranslate, minTranslate, maxTranslate)}px, 0, 0)`
 
       if (!animate) {
-        window.requestAnimationFrame(() => {
+        dockPositionRaf = window.requestAnimationFrame(() => {
           track.style.transition = ''
+          dockPositionRaf = 0
         })
       }
       return
@@ -1615,8 +1743,9 @@
     track.style.transform = `translate3d(${nextTranslate}px, 0, 0)`
 
     if (!animate) {
-      window.requestAnimationFrame(() => {
+      dockPositionRaf = window.requestAnimationFrame(() => {
         track.style.transition = ''
+        dockPositionRaf = 0
       })
     }
   }
@@ -1643,6 +1772,7 @@
     const existingSheet = shell.querySelector('.livepro-product-sheet')
     const existingSheetContent = existingSheet ? existingSheet.querySelector('.livepro-product-sheet__content') : null
     const previousScrollTop = existingSheetContent ? existingSheetContent.scrollTop : 0
+    const hadOpenClass = existingSheet ? existingSheet.classList.contains('is-open') : false
 
     if (!product.key) {
       if (existingSheet) {
@@ -1652,9 +1782,16 @@
     }
 
     if (existingSheet) {
-      existingSheet.outerHTML = renderProductSheet(product)
+      replaceNode(existingSheet, renderProductSheet(product))
     } else {
-      shell.insertAdjacentHTML('beforeend', renderProductSheet(product))
+      appendContent(shell, renderProductSheet(product))
+    }
+
+    if (hadOpenClass) {
+      const nextSheet = shell.querySelector('.livepro-product-sheet')
+      if (nextSheet && !nextSheet.classList.contains('is-open')) {
+        nextSheet.classList.add('is-open')
+      }
     }
 
     const nextSheetContent = shell.querySelector('.livepro-product-sheet__content')
@@ -1820,8 +1957,7 @@
       .pop() || ''
 
     if (newestIncomingKey) {
-      if (isProductSheetVisible()) {
-        state.followLive = false
+      if (isWidgetPanelOpen()) {
         state.pendingIncomingProductKey = ''
         return
       }
@@ -1838,7 +1974,7 @@
     }
 
     const nextActiveKey = normalized.live.active_item_key || ''
-    if (isProductSheetVisible()) {
+    if (isWidgetPanelOpen()) {
       return
     }
 
@@ -1923,7 +2059,7 @@
       return
     }
 
-    if (!state.expanded || isProductSheetVisible()) {
+    if (!state.expanded || isWidgetPanelOpen()) {
       return
     }
 
@@ -1939,6 +2075,12 @@
 
   function isProductSheetVisible() {
     return state.productSheetOpen || state.productSheetOpening || state.productSheetClosing
+  }
+
+  function isWidgetPanelOpen() {
+    return isProductSheetVisible()
+      || state.cartViewOpen || state.cartViewOpening || state.cartViewClosing
+      || state.cartConfirmationVisible
   }
 
   function hasLiveItem(key) {
@@ -2111,6 +2253,8 @@
         productCtaText: String(config.colors && config.colors.productCtaText ? config.colors.productCtaText : '#ffffff'),
         cartCtaBackground: String(config.colors && config.colors.cartCtaBackground ? config.colors.cartCtaBackground : '#000000'),
         cartCtaText: String(config.colors && config.colors.cartCtaText ? config.colors.cartCtaText : '#ffffff'),
+        cartIconBackground: String(config.colors && config.colors.cartIconBackground ? config.colors.cartIconBackground : '#ffffff'),
+        cartIconColor: String(config.colors && config.colors.cartIconColor ? config.colors.cartIconColor : '#1e2d49'),
         continueBtnBackground: String(config.colors && config.colors.continueBtnBackground ? config.colors.continueBtnBackground : '#ffffff'),
         continueBtnText: String(config.colors && config.colors.continueBtnText ? config.colors.continueBtnText : '#1e2d49'),
         checkoutBtnBackground: String(config.colors && config.colors.checkoutBtnBackground ? config.colors.checkoutBtnBackground : '#1e2d49'),
@@ -2333,7 +2477,6 @@
     }
 
     state.addToCartLoading = true
-    state.addToCartError = null
     renderProductSheetInShell(getSheetProduct())
 
     try {
@@ -2362,8 +2505,7 @@
       renderCartConfirmationInShell()
       syncCartBadge()
       return
-    } catch (err) {
-      state.addToCartError = err.message
+    } catch (_err) {
     } finally {
       state.addToCartLoading = false
       renderProductSheetInShell(getSheetProduct())
@@ -2448,10 +2590,9 @@
         badge.classList.toggle('is-hidden', count === 0)
       }
     }
-    const miniBadge = root.querySelector('.livepro-mini__cart-badge')
-    if (miniBadge) {
-      miniBadge.textContent = String(count)
-      miniBadge.classList.toggle('is-hidden', count === 0)
+
+    if (typeof window.jQuery !== 'undefined') {
+      window.jQuery(document.body).trigger('wc_fragment_refresh')
     }
   }
 
@@ -2810,13 +2951,13 @@
   function syncPlayerActionButtons() {
     const pauseButton = root.querySelector('.livepro-pause')
     if (pauseButton) {
-      pauseButton.innerHTML = renderPauseIcon(state.isPaused)
+      replaceContent(pauseButton, renderPauseIcon(state.isPaused))
       pauseButton.setAttribute('aria-label', getPauseButtonLabel())
     }
 
     const muteButton = root.querySelector('.livepro-mute')
     if (muteButton) {
-      muteButton.innerHTML = renderVolumeIcon(state.isMuted)
+      replaceContent(muteButton, renderVolumeIcon(state.isMuted))
       muteButton.setAttribute('aria-label', 'Silenciar o activar audio')
     }
   }
@@ -2938,9 +3079,9 @@
   function renderCartIcon() {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"></path>
-        <line x1="3" y1="6" x2="21" y2="6"></line>
-        <path d="M16 10a4 4 0 01-8 0"></path>
+        <circle cx="9" cy="21" r="1"></circle>
+        <circle cx="20" cy="21" r="1"></circle>
+        <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"></path>
       </svg>
     `
   }

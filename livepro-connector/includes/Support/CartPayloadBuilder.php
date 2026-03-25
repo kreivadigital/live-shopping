@@ -84,6 +84,9 @@ final class CartPayloadBuilder
 
         $attributes = self::extractAttributes($cartItem);
 
+        $managesStock = $product ? $product->managing_stock() : false;
+        $stockQuantity = $managesStock && $product ? (int) $product->get_stock_quantity() : null;
+
         return [
             'cart_item_key' => $cartItemKey,
             'product_id' => $productId,
@@ -95,6 +98,8 @@ final class CartPayloadBuilder
             'quantity' => $quantity,
             'subtotal' => $subtotal,
             'attributes' => $attributes,
+            'manages_stock' => $managesStock,
+            'stock_quantity' => $stockQuantity,
         ];
     }
 

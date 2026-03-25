@@ -68,6 +68,8 @@ final class SettingsRepository
             'widget_checkout_btn_label' => sanitize_text_field((string) ($input['widget_checkout_btn_label'] ?? 'TERMINAR COMPRA')),
             'widget_checkout_btn_background_color' => $this->sanitizeHexColor($input['widget_checkout_btn_background_color'] ?? '#1e2d49', '#1e2d49'),
             'widget_checkout_btn_text_color' => $this->sanitizeHexColor($input['widget_checkout_btn_text_color'] ?? '#ffffff', '#ffffff'),
+            'widget_cart_icon_background_color' => $this->sanitizeHexColor($input['widget_cart_icon_background_color'] ?? '#ffffff', '#ffffff'),
+            'widget_cart_icon_color' => $this->sanitizeHexColor($input['widget_cart_icon_color'] ?? '#1e2d49', '#1e2d49'),
         ];
     }
 
@@ -118,6 +120,8 @@ final class SettingsRepository
             'widget_checkout_btn_label' => 'TERMINAR COMPRA',
             'widget_checkout_btn_background_color' => '#1e2d49',
             'widget_checkout_btn_text_color' => '#ffffff',
+            'widget_cart_icon_background_color' => '#ffffff',
+            'widget_cart_icon_color' => '#1e2d49',
         ];
     }
 
