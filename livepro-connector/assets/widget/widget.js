@@ -499,13 +499,6 @@
     const isActive = String(product.key) === String(activeKey)
     const isLatest = String(product.key) === String(latestKey)
     const isCollapsed = state.dockCollapsed
-    const closeSlot = !isCollapsed
-      ? `
-        <button class="livepro-btn-close livepro-product-dock__close" type="button" aria-label="Colapsar dock">
-          ${renderDockCloseIcon()}
-        </button>
-      `
-      : ''
 
     return `
       <div
@@ -523,6 +516,10 @@
           <div class="livepro-product-dock__body">
             <div class="livepro-product-dock__body-info">
               ${isCollapsed ? `
+                <div class="livepro-product-dock__summary-row">
+                  <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
+                  <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
+                </div>
                 ${isLatest ? `<div class="livepro-product-dock__status-corner">${renderProductDockStatus()}</div>` : ''}
               ` : `
                 <div class="livepro-product-dock__body-top">
@@ -534,17 +531,14 @@
                     </span>
                   </div>
                   ${isLatest ? renderProductDockStatus() : ''}
+                  <button class="livepro-btn-close livepro-product-dock__close" type="button" aria-label="Colapsar dock">
+                    ${renderDockCloseIcon()}
+                  </button>
                 </div>
-              `}
-
-              ${isCollapsed ? `
-                <div class="livepro-product-dock__summary-row">
+                <div class="livepro-product-dock__body-bottom">
                   <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
                   <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
                 </div>
-              ` : `
-                <p class="livepro-product-dock__title">${escapeHtml(product.name)}</p>
-                <p class="livepro-product-dock__price">${escapeHtml(product.price)}</p>
               `}
             </div>
 
@@ -556,8 +550,6 @@
               </div>
             `}
           </div>
-
-          ${closeSlot}
         </div>
       </div>
     `
@@ -577,6 +569,15 @@
     const galleryCount = product.gallery.length
     const activeIndex = clamp(state.activePhotoIndex, 0, galleryCount - 1)
     const activePhoto = product.gallery[activeIndex] || product.primaryImage
+    const variationGroups = []
+
+    if (variationState.hasColorDimension) {
+      variationGroups.push(renderSelectableInfoGroup('Color', 'color', variationState.colorOptions, 'No informado'))
+    }
+
+    if (variationState.hasSizeDimension) {
+      variationGroups.push(renderSelectableInfoGroup('Talle', 'size', variationState.sizeOptions, 'No informado'))
+    }
 
     return `
       <div class="livepro-product-sheet ${state.productSheetClosing ? 'is-closing' : (state.productSheetOpening ? '' : 'is-open')}" role="dialog" aria-modal="false" aria-label="Detalle de producto">
@@ -623,25 +624,21 @@
               </div>
               <p class="livepro-product-sheet__stock is-hidden" aria-hidden="true">${renderStockSparkIcon()}${escapeHtml(product.stockLabel)}</p>
             </div>
-            ${variationState.interactive
-              ? renderSelectableInfoGroup('Color', 'color', variationState.colorOptions, 'No informado')
-              : renderInfoGroup('Color', product.colors, 'No informado')}
-            ${variationState.interactive
-              ? renderSelectableInfoGroup('Talle', 'size', variationState.sizeOptions, 'No informado')
-              : renderInfoGroup('Talle', product.sizes, 'No informado')}
+            ${variationGroups.join('')}
           </div>
         </div>
 
         <div class="livepro-product-sheet__footer">
-          ${renderSheetAddToCartCta(product)}
+          ${renderSheetAddToCartCta(variationState)}
         </div>
       </div>
     `
   }
 
-  function renderSheetAddToCartCta(product) {
-    const isVariable = product.variationMatrix.length > 0
-    const canAdd = !isVariable || Boolean(state.sheetSelectedVariationId)
+  function renderSheetAddToCartCta(variationState) {
+    const hasRequiredSelection = (!variationState.hasColorDimension || Boolean(state.sheetSelectedColor))
+      && (!variationState.hasSizeDimension || Boolean(state.sheetSelectedSize))
+    const canAdd = !variationState.isVariable || (hasRequiredSelection && Boolean(state.sheetSelectedVariationId))
     const isLoading = state.addToCartLoading
     const ctaDisabled = !canAdd || isLoading
     return `
@@ -1229,27 +1226,28 @@
   }
 
   function sanitizeSheetSelection(product) {
-    const matrix = Array.isArray(product && product.variationMatrix) ? product.variationMatrix : []
-    if (matrix.length === 0) {
+    const variationState = getSheetVariationState(product)
+    if (!variationState.isVariable) {
       state.sheetSelectedVariationId = null
       return
     }
 
-    let nextColor = state.sheetSelectedColor
-    let nextSize = state.sheetSelectedSize
+    const matrix = variationState.matrix
+    let nextColor = variationState.hasColorDimension ? state.sheetSelectedColor : ''
+    let nextSize = variationState.hasSizeDimension ? state.sheetSelectedSize : ''
 
-    if (nextColor && !hasAvailableColor(matrix, nextColor, nextSize)) {
+    if (variationState.hasColorDimension && nextColor && !hasAvailableColor(matrix, nextColor, nextSize)) {
       nextColor = ''
     }
 
-    if (nextSize && !hasAvailableSize(matrix, nextSize, nextColor)) {
+    if (variationState.hasSizeDimension && nextSize && !hasAvailableSize(matrix, nextSize, nextColor)) {
       nextSize = ''
     }
 
     state.sheetSelectedColor = nextColor
     state.sheetSelectedSize = nextSize
 
-    const exactVariation = findExactVariation(matrix, nextColor, nextSize)
+    const exactVariation = findExactVariation(matrix, nextColor, nextSize, variationState)
     state.sheetSelectedVariationId = exactVariation ? exactVariation.variationId : null
   }
 
@@ -1277,49 +1275,74 @@
   }
 
   function getSheetVariationState(product) {
-    const matrix = Array.isArray(product && product.variationMatrix) ? product.variationMatrix : []
-    const colors = product.colors.length > 0
-      ? product.colors
-      : dedupeList(matrix.map((variation) => variation.color).filter(Boolean))
-    const sizes = product.sizes.length > 0
-      ? product.sizes
-      : dedupeList(matrix.map((variation) => variation.size).filter(Boolean))
+    const variationState = getVariationDimensionState(product)
+    const matrix = variationState.matrix
 
     return {
-      interactive: matrix.length > 0,
-      colorOptions: colors
-        .filter((label) => hasAvailableColor(matrix, label, ''))
-        .map((label) => ({
-          label,
-          selected: isSameOption(label, state.sheetSelectedColor),
-          disabled: Boolean(state.sheetSelectedSize) && !hasAvailableColor(matrix, label, state.sheetSelectedSize),
-        })),
-      sizeOptions: sizes
-        .filter((label) => hasAvailableSize(matrix, label, ''))
-        .map((label) => ({
-          label,
-          selected: isSameOption(label, state.sheetSelectedSize),
-          disabled: Boolean(state.sheetSelectedColor) && !hasAvailableSize(matrix, label, state.sheetSelectedColor),
-        })),
-      exactVariation: findExactVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize),
-      previewVariation: findPreviewVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize),
+      isVariable: variationState.isVariable,
+      matrix,
+      hasColorDimension: variationState.hasColorDimension,
+      hasSizeDimension: variationState.hasSizeDimension,
+      colorOptions: variationState.hasColorDimension
+        ? variationState.colors
+          .filter((label) => hasAvailableColor(matrix, label, ''))
+          .map((label) => ({
+            label,
+            selected: isSameOption(label, state.sheetSelectedColor),
+            disabled: variationState.hasSizeDimension && Boolean(state.sheetSelectedSize) && !hasAvailableColor(matrix, label, state.sheetSelectedSize),
+          }))
+        : [],
+      sizeOptions: variationState.hasSizeDimension
+        ? variationState.sizes
+          .filter((label) => hasAvailableSize(matrix, label, ''))
+          .map((label) => ({
+            label,
+            selected: isSameOption(label, state.sheetSelectedSize),
+            disabled: variationState.hasColorDimension && Boolean(state.sheetSelectedColor) && !hasAvailableSize(matrix, label, state.sheetSelectedColor),
+          }))
+        : [],
+      exactVariation: findExactVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize, variationState),
+      previewVariation: findPreviewVariation(matrix, state.sheetSelectedColor, state.sheetSelectedSize, variationState),
+    }
+  }
+
+  function getVariationDimensionState(product) {
+    const matrix = Array.isArray(product && product.variationMatrix) ? product.variationMatrix : []
+    const isVariable = matrix.length > 0
+    const colors = product && Array.isArray(product.colors) && product.colors.length > 0
+      ? product.colors
+      : dedupeList(matrix.map((variation) => variation.color).filter(Boolean))
+    const sizes = product && Array.isArray(product.sizes) && product.sizes.length > 0
+      ? product.sizes
+      : dedupeList(matrix.map((variation) => variation.size).filter(Boolean))
+    const hasColorDimension = isVariable && (colors.length > 0 || matrix.some((variation) => String(variation && variation.color ? variation.color : '').trim() !== ''))
+    const hasSizeDimension = isVariable && (sizes.length > 0 || matrix.some((variation) => String(variation && variation.size ? variation.size : '').trim() !== ''))
+
+    return {
+      isVariable,
+      matrix,
+      colors,
+      sizes,
+      hasColorDimension,
+      hasSizeDimension,
     }
   }
 
   function toggleSheetColor(product, value) {
     ensureSheetSelection(product)
 
+    const variationState = getSheetVariationState(product)
     const nextColor = isSameOption(state.sheetSelectedColor, value) ? '' : value
     state.sheetSelectedColor = nextColor
 
-    if (nextColor && state.sheetSelectedSize && !hasAvailableSize(product.variationMatrix, state.sheetSelectedSize, nextColor)) {
+    if (variationState.hasSizeDimension && nextColor && state.sheetSelectedSize && !hasAvailableSize(product.variationMatrix, state.sheetSelectedSize, nextColor)) {
       state.sheetSelectedSize = ''
     }
 
     sanitizeSheetSelection(product)
 
     if (state.sheetSelectedColor) {
-      const previewVariation = findPreviewVariation(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize)
+      const previewVariation = findPreviewVariation(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize, variationState)
       if (previewVariation) {
         state.activePhotoIndex = clamp(previewVariation.galleryIndex, 0, product.gallery.length - 1)
       }
@@ -1333,21 +1356,22 @@
   function toggleSheetSize(product, value) {
     ensureSheetSelection(product)
 
+    const variationState = getSheetVariationState(product)
     const previousColor = state.sheetSelectedColor
     state.sheetSelectedSize = isSameOption(state.sheetSelectedSize, value) ? '' : value
 
-    if (state.sheetSelectedColor && state.sheetSelectedSize && !hasAvailableColor(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize)) {
+    if (variationState.hasColorDimension && state.sheetSelectedColor && state.sheetSelectedSize && !hasAvailableColor(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize)) {
       state.sheetSelectedColor = ''
     }
 
     sanitizeSheetSelection(product)
 
-    if (state.sheetSelectedColor) {
-      const previewVariation = findPreviewVariation(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize)
+    if (state.sheetSelectedColor || state.sheetSelectedSize) {
+      const previewVariation = findPreviewVariation(product.variationMatrix, state.sheetSelectedColor, state.sheetSelectedSize, variationState)
       if (previewVariation) {
         state.activePhotoIndex = clamp(previewVariation.galleryIndex, 0, product.gallery.length - 1)
       }
-    } else if (previousColor) {
+    } else if (previousColor || variationState.hasSizeDimension) {
       state.activePhotoIndex = 0
     }
 
@@ -1382,22 +1406,53 @@
     })
   }
 
-  function findExactVariation(matrix, color, size) {
-    if (!Array.isArray(matrix) || !color || !size) {
+  function findExactVariation(matrix, color, size, variationState) {
+    const requiresColor = Boolean(variationState && variationState.hasColorDimension)
+    const requiresSize = Boolean(variationState && variationState.hasSizeDimension)
+
+    if (!Array.isArray(matrix) || (requiresColor && !color) || (requiresSize && !size)) {
       return null
     }
 
-    return matrix.find((variation) => variation.available !== false && isSameOption(variation.color, color) && isSameOption(variation.size, size)) || null
+    return matrix.find((variation) => {
+      if (!variation || variation.available === false) {
+        return false
+      }
+
+      if (requiresColor && !isSameOption(variation.color, color)) {
+        return false
+      }
+
+      if (requiresSize && !isSameOption(variation.size, size)) {
+        return false
+      }
+
+      return true
+    }) || null
   }
 
-  function findPreviewVariation(matrix, color, size) {
-    if (!Array.isArray(matrix) || !color) {
+  function findPreviewVariation(matrix, color, size, variationState) {
+    if (!Array.isArray(matrix)) {
       return null
     }
 
-    return findExactVariation(matrix, color, size)
-      || matrix.find((variation) => variation.available !== false && isSameOption(variation.color, color) && (!size || isSameOption(variation.size, size)))
-      || matrix.find((variation) => variation.available !== false && isSameOption(variation.color, color))
+    const hasColorSelection = Boolean(variationState && variationState.hasColorDimension && color)
+    const hasSizeSelection = Boolean(variationState && variationState.hasSizeDimension && size)
+
+    if (!hasColorSelection && !hasSizeSelection) {
+      return null
+    }
+
+    return findExactVariation(matrix, color, size, variationState)
+      || matrix.find((variation) => variation.available !== false
+        && (!hasColorSelection || isSameOption(variation.color, color))
+        && (!hasSizeSelection || isSameOption(variation.size, size)))
+      || (hasColorSelection
+        ? matrix.find((variation) => variation.available !== false && isSameOption(variation.color, color))
+        : null)
+      || (hasSizeSelection
+        ? matrix.find((variation) => variation.available !== false && isSameOption(variation.size, size))
+        : null)
       || null
   }
 
@@ -2419,9 +2474,11 @@
     ])
 
     const variationMatrix = readVariationMatrix(product.variation_matrix, gallery)
-    const hasVariantOptions = colors.length > 0 || sizes.length > 0
+    const hasVariantOptions = colors.length > 0
+      || sizes.length > 0
+      || variationMatrix.some((variation) => String(variation && (variation.color || variation.size) ? (variation.color || variation.size) : '').trim() !== '')
 
-    return gallery.length <= 1 || colors.length === 0 || sizes.length === 0 || (hasVariantOptions && variationMatrix.length === 0)
+    return gallery.length <= 1 || (hasVariantOptions && variationMatrix.length === 0)
   }
 
   function getProductCacheKey(product) {
