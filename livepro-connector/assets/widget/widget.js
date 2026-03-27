@@ -113,6 +113,10 @@
     return true
   }
 
+  function shouldRenderMiniLive() {
+    return Boolean(state.live && state.live.is_live && !state.expanded && !isDesktopViewport() && readAutoOpenPreference())
+  }
+
   applyLayoutConfig()
 
   function render() {
@@ -144,6 +148,11 @@
     root.className = state.expanded ? 'livepro-expanded' : 'livepro-collapsed'
 
     if (!state.expanded) {
+      if (shouldRenderMiniLive()) {
+        renderMiniLive()
+        return
+      }
+
       renderCollapsed()
       return
     }
@@ -171,6 +180,66 @@
     root.querySelector('.livepro-mini').addEventListener('click', () => {
       openShell()
     })
+  }
+
+  function renderMiniLive() {
+    const videoId = state.live && state.live.youtube_video_id ? state.live.youtube_video_id : ''
+    if (!videoId) {
+      renderCollapsed()
+      return
+    }
+
+    const pills = renderStatusPills(getViewerLabel(), 'mini')
+    const existing = root.querySelector('.livepro-mini.livepro-mini--live')
+
+    if (existing && existing.dataset.videoId === videoId) {
+      updateMiniLive(existing, pills)
+      bindMiniLiveInteractions(existing)
+      return
+    }
+
+    replaceContent(root, `
+      <div class="livepro-mini livepro-mini--live" data-video-id="${escapeAttribute(videoId)}" aria-label="Abrir live shopping">
+        <iframe
+          class="livepro-mini__bg livepro-mini__iframe"
+          src="${escapeAttribute(buildEmbedUrl(videoId, true, true))}"
+          title="Live Shopping preview"
+          tabindex="-1"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        ></iframe>
+        <span class="livepro-mini__overlay"></span>
+        <span class="livepro-mini__top">${pills}</span>
+        <span class="livepro-mini__live-indicator" aria-hidden="true"></span>
+        <button class="livepro-mini__hit" type="button" aria-label="Abrir live shopping"></button>
+      </div>
+    `)
+
+    bindMiniLiveInteractions(root.querySelector('.livepro-mini.livepro-mini--live'))
+  }
+
+  function updateMiniLive(container, pills) {
+    if (!container) {
+      return
+    }
+
+    const top = container.querySelector('.livepro-mini__top')
+    if (top) {
+      replaceContent(top, pills)
+    }
+  }
+
+  function bindMiniLiveInteractions(container) {
+    if (!container) {
+      return
+    }
+
+    const hit = container.querySelector('.livepro-mini__hit')
+    if (hit && hit.dataset.bound !== '1') {
+      hit.addEventListener('click', () => {
+        openShell()
+      })
+      hit.dataset.bound = '1'
+    }
   }
 
   function renderExpanded() {

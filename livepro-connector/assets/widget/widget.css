@@ -78,6 +78,10 @@
   object-fit: cover;
 }
 
+.livepro-mini__iframe {
+  pointer-events: none;
+}
+
 .livepro-mini__overlay,
 .livepro-shell__scrim {
   position: absolute;
@@ -143,6 +147,54 @@
   letter-spacing: 0.26em;
   text-transform: uppercase;
   text-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.livepro-mini__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.livepro-mini--live {
+  background: #12171c;
+}
+
+.livepro-mini--live .livepro-mini__overlay {
+  background: linear-gradient(180deg, rgba(7, 10, 15, 0.22) 0%, rgba(7, 10, 15, 0.04) 42%, rgba(7, 10, 15, 0.36) 100%);
+}
+
+.livepro-mini__live-indicator {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(6, 10, 18, 0.42);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+.livepro-mini__live-indicator::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 13px solid rgba(255, 255, 255, 0.92);
+  transform: translate(-35%, -50%);
 }
 
 .livepro-pill {
