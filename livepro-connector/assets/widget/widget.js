@@ -5,7 +5,9 @@
 
   const cfg = window.LiveProWidgetConfig
   const widgetCfg = normalizeWidgetConfig(cfg.widget || {})
+  const checkoutUrl = String(cfg.checkoutUrl || '').trim()
   const storeId = Number(cfg.storeId || 0)
+  const autoOpenStorageKey = `livepro:auto-open:${storeId}`
   const TRANSITION_DELTA_MS = 600
   let dockPositionRaf = 0
 
@@ -72,6 +74,43 @@
   }
   function appendContent(container, html) {
     container.appendChild(htmlToFragment(html))
+  }
+
+  function isDesktopViewport() {
+    if (!window.matchMedia) {
+      return true
+    }
+
+    return !window.matchMedia('(max-width: 767px)').matches
+  }
+
+  function readAutoOpenPreference() {
+    try {
+      return window.sessionStorage.getItem(autoOpenStorageKey) === '1'
+    } catch (_error) {
+      return false
+    }
+  }
+
+  function writeAutoOpenPreference(enabled) {
+    try {
+      window.sessionStorage.setItem(autoOpenStorageKey, enabled ? '1' : '0')
+    } catch (_error) {
+      // Ignore storage failures and keep widget behavior in-memory.
+    }
+  }
+
+  function maybeAutoOpenShell() {
+    if (!state.live || !state.live.is_live || state.expanded || !isDesktopViewport() || !readAutoOpenPreference()) {
+      return false
+    }
+
+    openShell({
+      persistPreference: false,
+      forceMuted: true,
+    })
+
+    return true
   }
 
   applyLayoutConfig()
@@ -725,6 +764,14 @@
     }
   }
 
+  function goToCheckout() {
+    if (!checkoutUrl) {
+      return
+    }
+
+    window.location.href = checkoutUrl
+  }
+
   function renderCartView() {
     const cart = state.cart
     const isEmpty = !cart || !cart.items || cart.items.length === 0
@@ -758,7 +805,7 @@
                 <span>${escapeHtml(cart.total)}</span>
               </div>
             </div>
-            <button class="livepro-btn-cta livepro-cart-view__checkout" type="button" style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
+            <button class="livepro-btn-cta livepro-cart-view__checkout" type="button" ${checkoutUrl ? '' : 'disabled aria-disabled="true"'} style="background:${escapeAttribute(widgetCfg.colors.checkoutBtnBackground)};color:${escapeAttribute(widgetCfg.colors.checkoutBtnText)}">${escapeHtml(widgetCfg.labels.checkoutBtn)}</button>
           </div>
         ` : ''}
       </div>
@@ -964,13 +1011,33 @@
 
     const checkoutBtn = root.querySelector('.livepro-cart-view__checkout')
     if (checkoutBtn && checkoutBtn.dataset.bound !== '1') {
+      checkoutBtn.addEventListener('click', () => {
+        if (checkoutBtn.disabled) {
+          return
+        }
+
+        goToCheckout()
+      })
       checkoutBtn.dataset.bound = '1'
     }
   }
 
-  function openShell() {
+  function openShell(options) {
     if (state.expanded && !state.shellClosing) {
       return
+    }
+
+    const settings = Object.assign({
+      persistPreference: true,
+      forceMuted: false,
+    }, options || {})
+
+    if (settings.persistPreference) {
+      writeAutoOpenPreference(true)
+    }
+
+    if (settings.forceMuted) {
+      state.isMuted = true
     }
 
     state.isPaused = !widgetCfg.autoplay
@@ -985,6 +1052,8 @@
     if (!state.expanded || state.shellClosing) {
       return
     }
+
+    writeAutoOpenPreference(false)
 
     const shell = root.querySelector('.livepro-shell')
     if (!shell) {
@@ -1886,8 +1955,14 @@
         state.isPaused = !widgetCfg.autoplay
       }
       ensureRelevantProductFallbacks()
+      const autoOpenedShell = maybeAutoOpenShell()
 
       if (state.dockTransitioning) {
+        return
+      }
+
+      if (autoOpenedShell) {
+        flushPendingIncomingProductFocus()
         return
       }
 

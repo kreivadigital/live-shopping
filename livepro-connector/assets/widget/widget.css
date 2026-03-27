@@ -1360,6 +1360,11 @@
   opacity: 0.9;
 }
 
+.livepro-cart-view__checkout:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 @keyframes livepro-spin {
   to { transform: rotate(360deg); }
 }

@@ -54,6 +54,9 @@ final class WidgetAssets
             'storeId' => (string) $settings['store_id'],
             'pollMs' => 5000,
             'nonce' => wp_create_nonce('wp_rest'),
+            'checkoutUrl' => function_exists('wc_get_checkout_url')
+                ? esc_url_raw((string) wc_get_checkout_url())
+                : '',
             'previewImageUrl' => esc_url_raw((string) ($settings['preview_image_url'] ?? '')),
             'previewViewers' => (string) ($settings['preview_viewers'] ?? ''),
             'rest' => [
