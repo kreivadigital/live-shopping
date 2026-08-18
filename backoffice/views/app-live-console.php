@@ -361,7 +361,13 @@
           'Accept': 'application/json'
         }
       }, options || {}));
-      const body = await response.json();
+      const text = await response.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch (_) {
+        throw new Error('Error interno del servidor.');
+      }
       if (!response.ok || !body.ok) {
         throw new Error(body.error || 'No se pudo completar la acción.');
       }

@@ -2079,8 +2079,10 @@ final class App
         $params = [':store_id' => $storeId];
 
         if ($query !== '') {
-            $sql .= ' AND (LOWER(product_name) LIKE :q OR LOWER(sku) LIKE :q)';
-            $params[':q'] = '%' . strtolower($query) . '%';
+            $sql .= ' AND (LOWER(product_name) LIKE :q1 OR LOWER(sku) LIKE :q2)';
+            $likeValue = '%' . strtolower($query) . '%';
+            $params[':q1'] = $likeValue;
+            $params[':q2'] = $likeValue;
         }
 
         $sql .= ' ORDER BY updated_at DESC, product_name ASC LIMIT 200';
