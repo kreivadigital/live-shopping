@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LivePro — Visor de prueba</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0f1115; color:#e7e9ee; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:20px; }
+  h1 { font-size:16px; font-weight:600; }
+  .livepro-shell__video, video { width:100%; aspect-ratio:16/9; background:#000; border-radius:10px; border:1px solid #272b36; }
+  input { width:100%; padding:9px 10px; background:#0d0f14; color:#e7e9ee; border:1px solid #272b36; border-radius:7px; margin:10px 0; font-size:13px; }
+  button { padding:10px 16px; border:0; border-radius:8px; background:#3b82f6; color:#fff; font-weight:600; cursor:pointer; margin-right:8px; }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:#9aa2b1; margin-top:14px; }
+  .log div { padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LivePro · visor de prueba (WHEP)</h1>
+  <p style="color:#9aa2b1;font-size:13px">Esta URL es pública: no lleva clave de publicación.</p>
+  <input id="whep" value="https://customer-vjbvodxlchky5nvl.cloudflarestream.com/c2ba96cfdeb38370a24383c8573aa94d/webRTC/play">
+  <div>
+    <button id="ver">Ver</button>
+    <button id="sonido">Activar sonido</button>
+    <button id="parar">Parar</button>
+  </div>
+  <div id="media" style="margin-top:14px"></div>
+  <div class="log" id="log"></div>
+</div>
+
+<script src="./livepro-player-whep.js"></script>
+<script>
+  const log = (m) => { const d=document.createElement('div'); d.textContent=new Date().toLocaleTimeString()+'  '+m; document.getElementById('log').prepend(d) }
+  const nombres = { '-1':'sin iniciar', '0':'terminado', '1':'reproduciendo', '2':'pausado', '3':'buffering' }
+  let player = null
+
+  document.getElementById('ver').onclick = async () => {
+    if (player) player.destroy()
+    player = LiveProPlayerWhep.create({
+      endpoint: document.getElementById('whep').value.trim(),
+      muted: true,
+      onStateChange: (s) => log('estado: ' + (nombres[s] || s)),
+      onError: (e) => log('error: ' + (e && e.message ? e.message : e)),
+    })
+    const media = document.getElementById('media')
+    media.innerHTML = ''
+    await player.mount(media)
+    log('montado')
+  }
+  document.getElementById('sonido').onclick = () => { if (player) { player.unMute(); log('sonido activado') } }
+  document.getElementById('parar').onclick = () => { if (player) { player.destroy(); player = null; document.getElementById('media').innerHTML=''; log('detenido') } }
+</script>
+</body>
+</html>

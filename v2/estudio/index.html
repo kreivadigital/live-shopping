@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LivePro — Estudio</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --line:#272b36; --tx:#e7e9ee; --mut:#9aa2b1; --ok:#31c48d; --bad:#f05252; --accent:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.2px; }
+  .estado { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--mut); }
+  .punto { width:9px; height:9px; border-radius:50%; background:var(--mut); }
+  .punto.vivo { background:var(--bad); box-shadow:0 0 0 4px rgba(240,82,82,.18); }
+  .punto.listo { background:var(--ok); }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:20px; padding:20px; max-width:1200px; margin:0 auto; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } }
+  video { width:100%; aspect-ratio:16/9; background:#000; border-radius:10px; border:1px solid var(--line); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); margin:14px 0 6px; }
+  label:first-child { margin-top:0; }
+  select, input { width:100%; padding:9px 10px; background:#0d0f14; color:var(--tx); border:1px solid var(--line); border-radius:7px; font-size:14px; }
+  button { width:100%; padding:12px; margin-top:16px; border:0; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; background:var(--accent); color:#fff; }
+  button.cortar { background:var(--bad); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .log { margin-top:16px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--mut); max-height:180px; overflow:auto; }
+  .log div { padding:2px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+  .log .err { color:var(--bad); }
+  .ayuda { font-size:12px; color:var(--mut); margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LivePro · Estudio</h1>
+  <div class="estado"><span class="punto" id="punto"></span><span id="estado">sin conectar</span></div>
+</header>
+
+<main>
+  <section>
+    <video id="preview" autoplay playsinline muted></video>
+    <div class="log" id="log"></div>
+  </section>
+
+  <aside class="panel">
+    <label for="whip">URL de publicación (WHIP)</label>
+    <input id="whip" type="password" placeholder="https://customer-….../webRTC/publish" autocomplete="off">
+    <div class="ayuda">Contiene la clave de publicación: no compartir. En producción la entrega el backoffice.</div>
+
+    <label for="cam">Cámara</label>
+    <select id="cam"></select>
+
+    <label for="mic">Micrófono</label>
+    <select id="mic"></select>
+
+    <button id="btn" disabled>Salir al aire</button>
+  </aside>
+</main>
+
+<script>
+(function () {
+  'use strict'
+
+  const $ = (id) => document.getElementById(id)
+  let stream = null
+  let pc = null
+  let resourceUrl = null
+  let alAire = false
+
+  function log(msg, esError) {
+    const linea = document.createElement('div')
+    if (esError) linea.className = 'err'
+    linea.textContent = new Date().toLocaleTimeString() + '  ' + msg
+    $('log').prepend(linea)
+  }
+
+  function estado(texto, clase) {
+    $('estado').textContent = texto
+    $('punto').className = 'punto' + (clase ? ' ' + clase : '')
+  }
+
+  // Los labels de los dispositivos vienen vacíos hasta que hay permiso concedido,
+  // así que se pide la cámara antes de listar.
+  async function iniciar() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    } catch (e) {
+      log('sin permiso de cámara/micrófono: ' + e.message, true)
+      return
+    }
+    await listarDispositivos()
+    await abrirPreview()
+    $('btn').disabled = false
+    estado('listo', 'listo')
+  }
+
+  async function listarDispositivos() {
+    const devs = await navigator.mediaDevices.enumerateDevices()
+    for (const [tipo, sel] of [['videoinput', $('cam')], ['audioinput', $('mic')]]) {
+      sel.innerHTML = ''
+      devs.filter(d => d.kind === tipo).forEach((d, i) => {
+        const o = document.createElement('option')
+        o.value = d.deviceId
+        o.textContent = d.label || (tipo + ' ' + (i + 1))
+        sel.appendChild(o)
+      })
+    }
+  }
+
+  async function abrirPreview() {
+    if (stream) stream.getTracks().forEach(t => t.stop())
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: $('cam').value ? { exact: $('cam').value } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: { deviceId: $('mic').value ? { exact: $('mic').value } : undefined, echoCancellation: true },
+    })
+    $('preview').srcObject = stream
+  }
+
+  async function salirAlAire() {
+    const url = $('whip').value.trim()
+    if (!url) { log('falta la URL de publicación', true); return }
+
+    $('btn').disabled = true
+    estado('conectando…')
+
+    pc = new RTCPeerConnection({ bundlePolicy: 'max-bundle' })
+    stream.getTracks().forEach(t => pc.addTrack(t, stream))
+
+    pc.oniceconnectionstatechange = () => {
+      log('ICE: ' + pc.iceConnectionState)
+      if (pc.iceConnectionState === 'failed') {
+        log('la conexión se cayó', true)
+        estado('caído')
+      }
+    }
+
+    try {
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: offer.sdp,
+      })
+      if (!res.ok) throw new Error('WHIP respondió ' + res.status)
+
+      const loc = res.headers.get('Location')
+      if (loc) resourceUrl = new URL(loc, url).toString()
+
+      await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() })
+
+      alAire = true
+      estado('AL AIRE', 'vivo')
+      $('btn').textContent = 'Cortar transmisión'
+      $('btn').className = 'cortar'
+      $('btn').disabled = false
+      log('al aire')
+    } catch (e) {
+      log('no se pudo salir al aire: ' + e.message, true)
+      estado('error')
+      $('btn').disabled = false
+      if (pc) { pc.close(); pc = null }
+    }
+  }
+
+  async function cortar() {
+    if (resourceUrl) {
+      try { await fetch(resourceUrl, { method: 'DELETE' }) } catch (_) {}
+      resourceUrl = null
+    }
+    if (pc) { pc.close(); pc = null }
+    alAire = false
+    estado('listo', 'listo')
+    $('btn').textContent = 'Salir al aire'
+    $('btn').className = ''
+    log('transmisión cortada')
+  }
+
+  $('btn').addEventListener('click', () => (alAire ? cortar() : salirAlAire()))
+  $('cam').addEventListener('change', abrirPreview)
+  $('mic').addEventListener('change', abrirPreview)
+  // Si se cierra la pestaña en pleno vivo, avisarle a Cloudflare igual.
+  window.addEventListener('beforeunload', () => {
+    if (resourceUrl) navigator.sendBeacon && fetch(resourceUrl, { method: 'DELETE', keepalive: true })
+  })
+
+  iniciar()
+}())
+</script>
+</body>
+</html>
